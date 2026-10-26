@@ -1,0 +1,69 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Local duplicate of the MyNewAgent toolkit (source of truth is ~/Desktop/MyNewAgent)
+/MyNewAgent/
+
+# Local env
+.env*
+!.env.example
+
+# Local agent records, backups, and locks
+/prompt-log.md
+/.prompt-log.lock/
+/.prompt-log.flock
+/.agent-usage.jsonl
+/.agent-usage.lock
+/.agent-usage-*.tmp
+/budget-report.md
+/PROGRESS.md
+/.agents-backup-*/
+/.agents-staging-*/
+/.myagent-install.lock/
+/.myagent-hooks.lock/
+/.myagent-hooks-backup-*/
+/.myagent-hooks-stage-*/
+/.agents/**/__pycache__/
+/.agent-evidence.jsonl
+/.agent-evidence.lock
+/.agents/**/node_modules/
+/.claude/settings.local.json

@@ -1,0 +1,31 @@
+# Implement a whole spec as a ticket graph
+
+You have been provided a spec. This spec should have tickets associated with it, describing how to implement the spec.
+
+The goal is a verified implementation of the entire spec, integrated through the project's authorized delivery workflow. When a PR is part of that workflow, keep the spec on one integration branch. A local implementation request does not require publication.
+
+The tickets are not a list of steps. They are a **task graph** with blocking relationships between them. This means there is always a **frontier** of tickets which are ready to be grabbed.
+
+Communication to and from subagents should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, research notes, and previous commits. Don't duplicate information already available via pointers.
+
+**Implementer subagents** should be run in the background where possible for **maximum concurrency**.
+
+## Steps
+
+1. Read the spec and tickets, including the selected stack, experience brief, and acceptance evidence. Read enough to understand the task graph. Read `PROGRESS.md` (run `python3 -B .agents/scripts/progress.py --write` first when no hook did) for the current phase and the frontier, and state the phase in your first reply. For substantial UI work with missing direction, resolve it through [creative-direction](../creative-direction/SKILL.md) before delegating its implementation; reuse decisions already settled.
+
+2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in a directory outside the repo, accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration. When `docs/agents/models.md` exists, spawn the `explorer` agent it names; otherwise the general delegate.
+
+3. Prepare the integration branch when the project uses Git: `integrate/<slug>` from trunk, where `<slug>` is the plan folder under `.scratch/`. Inside a workstream (the plan has `workstreams.md` and this checkout is on its `ws/<slug>/<name>` branch) the workstream branch is the integration branch and nothing touches `integrate/<slug>`. Create a draft PR only when its publication is authorized; otherwise prepare the local changes and review notes. Include issue-closing references only for work the resulting delivery actually completes.
+
+4. Use **implementer subagents** to implement each ticket. Each implementer subagent works in its own worktree on its own branch, `ticket/<slug>/<NN>-<stem>` (`<stem>` is the ticket file name without `.md`), or `ticket/<slug>/<ws>/<NN>-<stem>` inside a workstream. When dispatching, the coordinator sets the ticket's Status to claimed with a Claimed by line, as [progress-operations.md](progress-operations.md) describes; the coordinator is the only writer of ticket files, and implementer and merger subagents never edit them. When `docs/agents/models.md` exists, spawn each implementer by the `implementer` agent name in its Roles table, and the merger by the `merger` name; otherwise use the general delegate. A brief is a set of context pointers (the spec, the ticket path, the exploration notes, the base commit) and tells the implementer to stop and report INCONCLUSIVE rather than guess when the ticket or the codebase leaves a question open. Pass links to the shared design/technology decisions and relevant experience acceptance to every UI implementer. The coordinator owns consistency across the assembled interface. Use the [capability fallbacks](../../HARNESS.md#capability-fallbacks) when delegation or worktrees are unavailable.
+
+5. Once an **implementer subagent** completes, a **merger subagent** merges the ticket's final commit into the integration branch with `git merge --no-ff --no-commit <sha> -m 'Integrate NN from <branch>'`, reruns the ticket's named check and the project's checks, then commits or runs `git merge --abort`. Conflicts follow the [resolving-merge-conflicts](../resolving-merge-conflicts/SKILL.md) mechanics under the always-on [git-discipline](../../rules/git-discipline.md) rule: preserve both intents; when they cannot coexist, abort, record the decision needed naming both commits, and ask the user. The imported skill's "never --abort" yields to the rule. After a successful merge the coordinator runs the review the ticket's Verify tier requires (tier 2: one independent review with the code-review skill, through the `reviewer` agent on the policy's model when `docs/agents/models.md` exists; tier 3: as in step 7), then ticks the acceptance boxes, sets Status done with the Done line recording that review, commits the ticket file as `Done NN: <title>`, and runs `python3 -B .agents/scripts/progress.py --write`.
+
+6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets, within the current phase; a later-phase ticket waits until the phase gate is closed. This allows for maximum concurrency.
+
+7. Once a phase's tickets are complete, run the required project checks and /code-review on the integration branch. The phase's gate ticket (`Phase N review`, Verify 3) is the coordinator's own: claim it, run the tier-3 review, and close it only on the evidence its Exit names; a `ready-for-human` gate is closed by the user. For UI work, the coordinator drives the assembled user flow and applies the [experience review](../creative-direction/SKILL.md#review-the-experience), including affected desktop/mobile states. Fix verified issues within scope. Distinguish test results, observed behavior, aesthetic judgment, and verification limits.
+
+8. Deliver the verified result and remaining limits. Mark an authorized PR ready for review when the applicable checks pass. Merge the integration branch into trunk only on the user's explicit authorization; preparing the merge or the PR is not that authorization.
+
+9. Account for temporary worktrees and artifacts. Follow the canonical preservation and deletion rules; do not discard tracked, untracked, or ignored work merely because integration finished.

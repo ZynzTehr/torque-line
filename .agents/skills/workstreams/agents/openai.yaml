@@ -1,0 +1,5 @@
+interface:
+  display_name: "Workstreams"
+  short_description: "Run one plan across several sessions in worktrees"
+policy:
+  allow_implicit_invocation: true

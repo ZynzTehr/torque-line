@@ -1,0 +1,290 @@
+{
+  "version": 1,
+  "resources": {
+    "skills/agent-development/SKILL.md": [
+      "examples/agent-creation-prompt.md",
+      "examples/complete-agent-examples.md",
+      "references/agent-creation-system-prompt.md",
+      "references/system-prompt-design.md",
+      "references/triggering-examples.md",
+      "scripts/validate-agent.sh"
+    ],
+    "skills/architect/SKILL.md": [
+      "references/design-red-flags.md",
+      "references/rationale-template.md",
+      "references/runner-prompt.md"
+    ],
+    "skills/ask-matt/SKILL.md": [
+      "PHASE-BOUNDARIES.md"
+    ],
+    "skills/budget-review/SKILL.md": [
+      "references/usage-schema.md"
+    ],
+    "skills/codebase-design/SKILL.md": [
+      "DEEPENING.md",
+      "DESIGN-IT-TWICE.md"
+    ],
+    "skills/command-development/SKILL.md": [
+      "README.md",
+      "examples/plugin-commands.md",
+      "examples/simple-commands.md",
+      "references/advanced-workflows.md",
+      "references/documentation-patterns.md",
+      "references/frontmatter-reference.md",
+      "references/interactive-commands.md",
+      "references/marketplace-considerations.md",
+      "references/plugin-features-reference.md",
+      "references/testing-strategies.md"
+    ],
+    "skills/create-verification-skill/SKILL.md": [
+      "references/feature-map-example/README.md",
+      "references/feature-map-example/create-note.md",
+      "references/feature-map-example/search.md"
+    ],
+    "skills/creative-direction/SKILL.md": [
+      "BRIEF.md"
+    ],
+    "skills/diagnosing-bugs/SKILL.md": [
+      "scripts/hitl-loop.template.sh"
+    ],
+    "skills/domain-modeling/SKILL.md": [
+      "ADR-FORMAT.md",
+      "CONTEXT-FORMAT.md"
+    ],
+    "skills/git-guardrails-claude-code/SKILL.md": [
+      "scripts/block-dangerous-git.sh"
+    ],
+    "skills/hook-development/SKILL.md": [
+      "examples/load-context.sh",
+      "examples/validate-bash.sh",
+      "examples/validate-write.sh",
+      "references/advanced.md",
+      "references/migration.md",
+      "references/patterns.md",
+      "scripts/README.md",
+      "scripts/hook-linter.sh",
+      "scripts/test-hook.sh",
+      "scripts/validate-hook-schema.sh"
+    ],
+    "skills/how/SKILL.md": [
+      "references/explainer-prompt.md",
+      "references/explorer-prompt.md"
+    ],
+    "skills/implement/SKILL.md": [
+      "progress-operations.md",
+      "ticket-graph.md"
+    ],
+    "skills/improve-codebase-architecture/SKILL.md": [
+      "HTML-REPORT.md"
+    ],
+    "skills/interrogate/SKILL.md": [
+      "references/code-quality-review.md",
+      "references/lead-judgment.md",
+      "references/reviewer-prompt.md",
+      "references/rubric.md"
+    ],
+    "skills/mcp-integration/SKILL.md": [
+      "examples/http-server.json",
+      "examples/sse-server.json",
+      "examples/stdio-server.json",
+      "references/authentication.md",
+      "references/server-types.md",
+      "references/tool-usage.md"
+    ],
+    "skills/model-policy/SKILL.md": [
+      "references/models-doc-template.md",
+      "references/roles.md",
+      "references/templates/claude/explorer.md",
+      "references/templates/claude/implementer.md",
+      "references/templates/claude/merger.md",
+      "references/templates/claude/reviewer.md",
+      "references/templates/codex/explorer.toml",
+      "references/templates/codex/implementer.toml",
+      "references/templates/codex/merger.toml",
+      "references/templates/codex/reviewer.toml",
+      "references/templates/cursor/explorer.md",
+      "references/templates/cursor/implementer.md",
+      "references/templates/cursor/merger.md",
+      "references/templates/cursor/reviewer.md"
+    ],
+    "skills/plugin-settings/SKILL.md": [
+      "examples/create-settings-command.md",
+      "examples/example-settings.md",
+      "examples/read-settings-hook.sh",
+      "references/parsing-techniques.md",
+      "references/real-world-examples.md",
+      "scripts/parse-frontmatter.sh",
+      "scripts/validate-settings.sh"
+    ],
+    "skills/plugin-structure/SKILL.md": [
+      "README.md",
+      "examples/advanced-plugin.md",
+      "examples/minimal-plugin.md",
+      "examples/standard-plugin.md",
+      "references/component-patterns.md",
+      "references/manifest-reference.md"
+    ],
+    "skills/poteto-mode/SKILL.md": [
+      "playbooks/authoring-a-skill.md",
+      "playbooks/autonomous-run.md",
+      "playbooks/autopilot-full.md",
+      "playbooks/autopilot-stack.md",
+      "playbooks/babysit.md",
+      "playbooks/bug-fix.md",
+      "playbooks/eval.md",
+      "playbooks/feature.md",
+      "playbooks/hillclimb.md",
+      "playbooks/investigation.md",
+      "playbooks/multi-phase-plan.md",
+      "playbooks/opening-a-pr.md",
+      "playbooks/orchestrate.md",
+      "playbooks/pause-safely.md",
+      "playbooks/perf-issue.md",
+      "playbooks/prototype.md",
+      "playbooks/refactoring.md",
+      "playbooks/runtime-forensics.md",
+      "playbooks/session-pickup.md",
+      "playbooks/shipping.md",
+      "playbooks/trace-forensics.md",
+      "playbooks/visual-parity.md",
+      "playbooks/worktree-cleanup.md",
+      "references/bugbot-triage.md",
+      "scripts/bootstrap.ts",
+      "scripts/bun.lock",
+      "scripts/check-plan.mjs",
+      "scripts/orch/orch.test.ts",
+      "scripts/orch/orch.ts",
+      "scripts/orch/store.ts",
+      "scripts/package.json",
+      "scripts/watch-pr/cli.test.ts",
+      "scripts/watch-pr/cli.ts",
+      "scripts/watch-pr/fakes.test-helper.ts",
+      "scripts/watch-pr/github.test.ts",
+      "scripts/watch-pr/github.ts",
+      "scripts/watch-pr/policy.test.ts",
+      "scripts/watch-pr/policy.ts",
+      "scripts/watch-pr/render.ts",
+      "scripts/watch-pr/tsconfig.json",
+      "scripts/watch-pr/types.compile.ts",
+      "scripts/watch-pr/types.ts",
+      "scripts/watch-pr/watch-pr",
+      "scripts/worktree-audit.sh",
+      "scripts/worktree_audit.py"
+    ],
+    "skills/pr/SKILL.md": [
+      "CREDITS.md"
+    ],
+    "skills/prototype/SKILL.md": [
+      "INTERACTION.md",
+      "LOGIC.md",
+      "UI.md"
+    ],
+    "skills/reflect/SKILL.md": [
+      "references/divergent-reviewer.md",
+      "references/judgment-reviewer.md",
+      "references/synthesizer.md",
+      "references/tooling-reviewer.md"
+    ],
+    "skills/setup-matt-pocock-skills/SKILL.md": [
+      "domain.md",
+      "issue-tracker-github.md",
+      "issue-tracker-gitlab.md",
+      "issue-tracker-local.md",
+      "triage-labels.md"
+    ],
+    "skills/setup-ts-deep-modules/SKILL.md": [
+      "dependency-cruiser.config.cjs"
+    ],
+    "skills/show-me-your-work/SKILL.md": [
+      "references/decision-log-template.tsv",
+      "scripts/log.sh"
+    ],
+    "skills/skill-development/SKILL.md": [
+      "references/skill-template.md",
+      "references/claude-plugins.md",
+      "references/skill-creator-original.md"
+    ],
+    "skills/tdd/SKILL.md": [
+      "bug-fix.md",
+      "mocking.md",
+      "tests.md"
+    ],
+    "skills/teach/SKILL.md": [
+      "GLOSSARY-FORMAT.md",
+      "LEARNING-RECORD-FORMAT.md",
+      "MISSION-FORMAT.md",
+      "RESOURCES-FORMAT.md",
+      "explain.md"
+    ],
+    "skills/triage/SKILL.md": [
+      "AGENT-BRIEF.md",
+      "OUT-OF-SCOPE.md"
+    ],
+    "skills/typescript-best-practices/SKILL.md": [
+      "references/patterns.md"
+    ],
+    "skills/why/SKILL.md": [
+      "references/epistemics.md",
+      "references/investigator-prompt.md",
+      "references/source-playbook.md",
+      "references/sources/code-archaeology.md",
+      "references/sources/databricks.md",
+      "references/sources/datadog.md",
+      "references/sources/incident-postmortem.md",
+      "references/sources/linear.md",
+      "references/sources/notion.md",
+      "references/sources/sentry.md",
+      "references/sources/slack.md",
+      "references/synthesizer-prompt.md"
+    ],
+    "skills/wizard/SKILL.md": [
+      "template.sh"
+    ],
+    "skills/workstreams/SKILL.md": [
+      "references/integrate.md",
+      "references/setup.md"
+    ],
+    "skills/writing-for-agents/SKILL.md": [
+      "SKILL-MECHANICS.md"
+    ]
+  },
+  "capabilities": [
+    {
+      "name": "deslop",
+      "used_by": [
+        "skills/poteto-mode/SKILL.md"
+      ],
+      "fallback": "Review the diff directly for unrelated edits, duplication, unnecessary abstractions, and prose quality."
+    },
+    {
+      "name": "control-ui",
+      "used_by": [
+        "skills/poteto-mode/SKILL.md",
+        "skills/creative-direction/SKILL.md",
+        "skills/prototype/SKILL.md"
+      ],
+      "fallback": "Use an available browser tool to exercise the UI; report a verification limitation if none is available."
+    },
+    {
+      "name": "control-cli",
+      "used_by": [
+        "skills/poteto-mode/SKILL.md"
+      ],
+      "fallback": "Run the CLI in the available terminal and inspect actual output and exit status."
+    },
+    {
+      "name": "Comment Sicko",
+      "used_by": [
+        "skills/no-comments/SKILL.md"
+      ],
+      "fallback": "Perform the comment review with an available general agent or directly in the current agent."
+    },
+    {
+      "name": "poteto-agent",
+      "used_by": [
+        "skills/poteto-mode/SKILL.md"
+      ],
+      "fallback": "Use an available general agent with the same scoped task and constraints, or run sequentially."
+    }
+  ]
+}

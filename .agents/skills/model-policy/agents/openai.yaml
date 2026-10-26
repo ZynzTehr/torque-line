@@ -1,0 +1,5 @@
+interface:
+  display_name: "Model Policy"
+  short_description: "Set model tier and effort per subagent role"
+policy:
+  allow_implicit_invocation: true
