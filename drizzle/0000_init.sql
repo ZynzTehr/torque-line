@@ -129,6 +129,7 @@ CREATE TABLE "maintenance_schedules" (
 	"mileage_interval" integer,
 	"time_interval_days" integer,
 	"last_service_mileage" integer,
+	"last_service_hours" integer,
 	"last_service_date" date,
 	"enabled" boolean DEFAULT true NOT NULL,
 	"source" interval_source DEFAULT 'manual' NOT NULL,
