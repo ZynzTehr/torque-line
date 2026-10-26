@@ -7,6 +7,7 @@ import { formatCurrency, formatDate, formatMileage, getStalenessLabel } from "@/
 import { equipmentReading, serviceStatus } from "@/domain/maintenance";
 import { ApplyScheduleButton, UnitActions } from "@/components/fleet/UnitActions";
 import { ScheduleItemRow } from "@/components/fleet/ScheduleItemActions";
+import { SuggestIntervals } from "@/components/fleet/SuggestIntervals";
 import { getEquipment } from "@/server/equipmentStore";
 import { requireFleet } from "@/server/fleet";
 import { toBoardEquipment, toBoardSchedule } from "@/server/fleetView";
@@ -55,6 +56,7 @@ async function UnitDetail({ params }: { params: Promise<{ id: string }> }) {
       <section className="workboard-section" aria-labelledby="pm-title">
         <div className="section-heading">
           <div><span className="section-eyebrow">Preventive maintenance</span><h3 id="pm-title">Schedule</h3></div>
+          <SuggestIntervals equipmentId={unit.id} />
         </div>
         {schedules.length === 0 ? (
           <div className="card flex flex-wrap items-center justify-between gap-3">

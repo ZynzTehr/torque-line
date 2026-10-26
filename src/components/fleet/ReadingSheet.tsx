@@ -2,6 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { recordReadingAction } from "@/app/(app)/actions";
+import { readMeterAction } from "@/app/(app)/ai-actions";
+import { PhotoButton } from "./PhotoButton";
 import { Sheet } from "@/components/ui/Sheet";
 import { formatMileage } from "@/domain/format";
 import type { BoardEquipment } from "@/domain/workboard";
@@ -16,8 +18,9 @@ export function ReadingSheet({ unit, open, onClose }: { unit: BoardEquipment; op
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
 
-  const reset = () => { setValue(""); setLower(null); setNote(""); setError(null); };
+  const reset = () => { setValue(""); setLower(null); setNote(""); setError(null); setAiNote(null); };
   const close = () => { reset(); onClose(); };
 
   async function submit(e: FormEvent) {
@@ -44,6 +47,19 @@ export function ReadingSheet({ unit, open, onClose }: { unit: BoardEquipment; op
       </>}>
       <form id="reading-form" onSubmit={submit} className="flex flex-col gap-4">
         <p className="text-secondary text-sm">On file: <strong className="text-fg">{current == null ? "No reading yet" : `${formatMileage(current)} ${suffix}`}</strong></p>
+        <PhotoButton label={hours ? "Read hours from photo" : "Read odometer from photo"} onPhoto={async (photo) => {
+          setError(null);
+          const form = new FormData();
+          form.set("equipmentId", unit.id);
+          form.set("photo", photo);
+          const r = await readMeterAction(form);
+          if (!r.ok) { setError(r.message); return; }
+          if (r.value == null) { setAiNote(r.notes || "No meter reading was visible. Enter it manually."); return; }
+          setValue(String(r.value));
+          setLower(null);
+          setAiNote(`Read ${formatMileage(r.value)} ${suffix} (${r.confidence} confidence). Check it against the display before saving.`);
+        }} />
+        {aiNote && <p className="text-secondary text-sm" role="status">{aiNote}</p>}
         <div className="form-group">
           <label className="form-label" htmlFor="reading-value">{hours ? "Engine hours" : "Odometer"}</label>
           <input id="reading-value" className="form-input font-mono" inputMode="numeric" pattern="[0-9]*" required

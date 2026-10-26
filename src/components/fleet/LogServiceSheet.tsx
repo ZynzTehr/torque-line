@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { logServiceAction } from "@/app/(app)/actions";
+import { readServiceReceiptAction } from "@/app/(app)/ai-actions";
+import { PhotoButton } from "./PhotoButton";
 import { Sheet } from "@/components/ui/Sheet";
 import { formatCurrency, formatDate } from "@/domain/format";
 import type { BoardEquipment, BoardSchedule } from "@/domain/workboard";
@@ -15,7 +17,9 @@ export function LogServiceSheet({ unit, schedules, scheduleId, open, onClose }: 
   const [duplicate, setDuplicate] = useState<{ date: string; serviceType: string; cost: number | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const close = () => { setDuplicate(null); setError(null); onClose(); };
+  const [aiNote, setAiNote] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const close = () => { setDuplicate(null); setError(null); setAiNote(null); onClose(); };
   const meter = unit.type === "trailer" ? null : unit.type === "reefer" ? "Engine hours" : "Odometer";
 
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -47,7 +51,22 @@ export function LogServiceSheet({ unit, schedules, scheduleId, open, onClose }: 
         <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
         <button type="submit" form="service-form" className="btn btn-primary" disabled={pending}>{duplicate ? "Save separate entry" : "Save service"}</button>
       </>}>
-      <form id="service-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="service-form" ref={formRef} onSubmit={submit} className="flex flex-col gap-4">
+        <PhotoButton label="Fill from receipt photo" onPhoto={async (photo) => {
+          setError(null);
+          const form = new FormData();
+          form.set("photo", photo);
+          const r = await readServiceReceiptAction(form);
+          if (!r.ok) { setError(r.message); return; }
+          const set = (name: string, v: string | number | null) => {
+            const el = formRef.current?.elements.namedItem(name) as HTMLInputElement | null;
+            if (el && v != null && v !== "") el.value = String(v);
+          };
+          set("serviceType", r.serviceType); set("date", r.date); set("cost", r.cost); set("shop", r.shop); set("notes", r.notes);
+          if (unit.type === "tractor") set("reading", r.mileage);
+          setAiNote(`Filled from the receipt (${r.confidence} confidence). Review every field before saving.`);
+        }} />
+        {aiNote && <p className="text-secondary text-sm" role="status">{aiNote}</p>}
         <div className="form-group">
           <label className="form-label" htmlFor="svc-schedule">Schedule item</label>
           <select id="svc-schedule" name="scheduleId" className="form-select" defaultValue={scheduleId ?? ""}>
