@@ -5,7 +5,7 @@ import { getDb } from "@/db";
 import { buildDiagnosisTurn, runDiagnosis, type StoredTurn } from "@/ai/diagnose";
 import type { CauseStatus } from "@/ai/diagnosis";
 import { anthropicTransport, type AiFailure } from "@/ai/structured";
-import { lookupIntervals, readMeter, readServiceReceipt } from "@/ai/tasks";
+import { lookupIntervals, readFuelReceipt, readMeter, readServiceReceipt } from "@/ai/tasks";
 import { consumeAiRequest } from "@/server/aiQuota";
 import { fileToImageBlock, MAX_IMAGES } from "@/server/aiImages";
 import { appendTurn, createSession, getSession, markCause, replaceCauses, resolveSession } from "@/server/diagnosticsStore";
@@ -47,6 +47,17 @@ export async function readServiceReceiptAction(form: FormData) {
   const r = await readServiceReceipt(anthropicTransport(), image.block);
   if (!r.ok) return aiFailure(r.code);
   if (!r.data.isServiceRecord) return { ok: false as const, message: "That doesn't look like a service receipt.", manual: true };
+  return { ok: true as const, ...r.data };
+}
+
+export async function readFuelReceiptAction(form: FormData) {
+  const ctx = await requireFleet();
+  const image = await fileToImageBlock(form.get("photo"));
+  if (!image.ok) return { ok: false as const, message: image.message };
+  if (!(await spend(ctx.fleetId)).ok) return aiFailure("quota");
+  const r = await readFuelReceipt(anthropicTransport(), image.block);
+  if (!r.ok) return aiFailure(r.code);
+  if (!r.data.is_fuel_receipt) return { ok: false as const, message: "That doesn't look like a fuel receipt.", manual: true };
   return { ok: true as const, ...r.data };
 }
 

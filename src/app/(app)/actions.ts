@@ -7,6 +7,7 @@ import { archiveEquipment, createEquipment, updateEquipment, type EquipmentInput
 import { recordReading, type ReadingInput } from "@/server/readingsStore";
 import { addSchedule, applyDefaultSchedule, deleteSchedule, updateSchedule, type ScheduleInput } from "@/server/scheduleStore";
 import { logService, type ServiceInput } from "@/server/serviceStore";
+import { addFuelStop, deleteFuelStop, type FuelStopInput } from "@/server/fuelStore";
 
 /**
  * Server actions are public HTTP endpoints. Each one derives the fleet from the session through
@@ -70,4 +71,12 @@ export async function updateScheduleAction(id: string, input: Partial<ScheduleIn
 
 export async function deleteScheduleAction(id: string) {
   return withFleet(({ fleetId }) => deleteSchedule(getDb(), fleetId, id));
+}
+
+export async function addFuelStopAction(input: FuelStopInput) {
+  return withFleet((actor) => addFuelStop(getDb(), actor, input));
+}
+
+export async function deleteFuelStopAction(id: string) {
+  return withFleet(({ fleetId }) => deleteFuelStop(getDb(), fleetId, id));
 }

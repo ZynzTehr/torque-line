@@ -85,8 +85,8 @@ export interface UnitCosts {
   end: number | null;
 }
 
-type CostRecord = { date?: string | null; cost?: unknown; mileage?: unknown; hours?: unknown };
-type FuelLine = { date?: string | null; totalCost?: unknown; odometer?: unknown; hours?: unknown };
+type CostRecord = { date?: string | null; cost?: unknown; mileage?: unknown; hours?: unknown; [key: string]: unknown };
+type FuelLine = { date?: string | null; totalCost?: unknown; odometer?: unknown; hours?: unknown; [key: string]: unknown };
 
 export function unitCosts(equipment: Equipment | null | undefined, records: CostRecord[], fuel: FuelLine[]): UnitCosts {
   const isTrailer = equipment?.type === "trailer";
