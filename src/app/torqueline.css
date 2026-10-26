@@ -132,7 +132,7 @@ h3 { font-size: 1.1rem; font-weight: 600; line-height: 1.4; }
   flex-shrink: 0;
 }
 
-.sidebar-brand h1 {
+.sidebar-brand h1, .sidebar-brand-name {
   font-size: 1.1rem;
   font-weight: 700;
   background: linear-gradient(135deg, var(--accent), #a78bfa);

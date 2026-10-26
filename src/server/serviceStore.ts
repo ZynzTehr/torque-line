@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import * as schema from "@/db/schema";
 import { validDate } from "@/domain/fuel";
@@ -99,4 +99,11 @@ export async function logService(db: AppDb, actor: Actor, input: ServiceInput): 
     }
     return { ok: true as const, record };
   });
+}
+
+/** Total recorded service spend for a fleet, summed in Postgres numeric (no float drift). */
+export async function fleetServiceSpend(db: AppDb, fleetId: string): Promise<number> {
+  const [row] = await db.select({ total: sql<string | null>`sum(${schema.serviceRecords.cost})` })
+    .from(schema.serviceRecords).where(eq(schema.serviceRecords.fleetId, fleetId));
+  return Number(row?.total ?? 0);
 }
