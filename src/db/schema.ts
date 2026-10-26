@@ -26,8 +26,10 @@ export const diagnosticRole = pgEnum("diagnostic_role", ["user", "assistant"]);
 export const likelihood = pgEnum("likelihood", ["high", "medium", "low"]);
 export const costTier = pgEnum("cost_tier", ["free", "low", "medium", "high"]);
 
+/** MVP invariant: a user owns at most one fleet (unique owner). Multi-fleet access comes later through memberships. */
 export const fleets = pgTable("fleets", {
   id: id(),
+  ownerUserId: text("owner_user_id").notNull().unique("fleets_owner_user"),
   name: text("name").notNull(),
   timezone: text("timezone").notNull().default("America/Chicago"),
   aiDailyLimit: integer("ai_daily_limit").notNull().default(100),
