@@ -6,6 +6,7 @@ import { findSimilarServiceRecord } from "@/domain/serviceRecords";
 import type { AppDb } from "./fleetStore";
 import { getEquipment } from "./equipmentStore";
 import { invalid, notFound, type Actor, type Failure } from "./result";
+import { advanceMeterFromEvidence, observedAtFromDate } from "./readingsStore";
 
 export type ServiceRecordRow = typeof schema.serviceRecords.$inferSelect;
 
@@ -82,20 +83,7 @@ export async function logService(db: AppDb, actor: Actor, input: ServiceInput): 
     }
 
     if (meterReading != null) {
-      const [locked] = await tx.select().from(schema.equipment)
-        .where(and(eq(schema.equipment.fleetId, actor.fleetId), eq(schema.equipment.id, unit.id))).for("update");
-      const current = isReefer ? locked.currentHours : locked.currentMileage;
-      if (current == null || meterReading >= current) {
-        const observedAt = new Date(`${d.date}T12:00:00Z`);
-        await tx.insert(schema.readings).values({
-          fleetId: actor.fleetId, equipmentId: unit.id, kind: isReefer ? "hours" : "odometer", value: meterReading,
-          observedAt, source: "service", createdBy: actor.userId,
-        });
-        await tx.update(schema.equipment).set(isReefer
-          ? { currentHours: meterReading, readingUpdatedAt: new Date(), updatedAt: new Date() }
-          : { currentMileage: meterReading, readingUpdatedAt: new Date(), updatedAt: new Date() })
-          .where(and(eq(schema.equipment.fleetId, actor.fleetId), eq(schema.equipment.id, unit.id)));
-      }
+      await advanceMeterFromEvidence(tx, actor, { equipmentId: unit.id, value: meterReading, observedAt: observedAtFromDate(d.date), source: "service" });
     }
     return { ok: true as const, record };
   });

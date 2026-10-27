@@ -12,6 +12,8 @@ import { appendTurn, createSession, getSession, markCause, replaceCauses, resolv
 import { getEquipment } from "@/server/equipmentStore";
 import { requireFleet } from "@/server/fleet";
 import { addSchedule } from "@/server/scheduleStore";
+import { saveAttachment } from "@/server/attachmentsStore";
+import { neonObjectStore } from "@/server/objectStore";
 
 type UiFailure = { ok: false; message: string; manual?: boolean };
 
@@ -98,6 +100,15 @@ export async function startDiagnosisAction(form: FormData) {
   }
   const created = await createSession(db, actor, { equipmentId: String(form.get("equipmentId") ?? ""), symptom: String(form.get("symptom") ?? "") });
   if (!created.ok) return { ok: false as const, message: created.message };
+  // Keep the photos with the diagnosis so they can be viewed later, even if the AI call fails.
+  const store = await neonObjectStore();
+  for (const img of images) {
+    const source = img.source as { media_type: string; data: string };
+    await saveAttachment(db, store, actor, {
+      kind: "diagnostic_photo", parentId: created.session.id,
+      bytes: new Uint8Array(Buffer.from(source.data, "base64")), contentType: source.media_type,
+    });
+  }
   if (!(await spend(ctx.fleetId)).ok) return { ...aiFailure("quota"), sessionId: created.session.id };
 
   const unit = (await getEquipment(db, ctx.fleetId, created.session.equipmentId))!;

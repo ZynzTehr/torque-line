@@ -7,6 +7,7 @@ import { diagnosisSchema } from "@/ai/diagnosis";
 import { CauseCard } from "@/components/diagnostics/CauseCard";
 import { RefinePanel } from "@/components/diagnostics/RefinePanel";
 import { getSession } from "@/server/diagnosticsStore";
+import { listAttachments } from "@/server/attachmentsStore";
 import { getEquipment } from "@/server/equipmentStore";
 import { requireFleet } from "@/server/fleet";
 
@@ -38,7 +39,10 @@ async function Diagnosis({ params, searchParams }: PageProps<"/diagnostics/[id]"
   const db = getDb();
   const view = await getSession(db, fleetId, id);
   if (!view) notFound();
-  const unit = await getEquipment(db, fleetId, view.session.equipmentId);
+  const [unit, photos] = await Promise.all([
+    getEquipment(db, fleetId, view.session.equipmentId),
+    listAttachments(db, fleetId, "diagnostic_photo", view.session.id),
+  ]);
   const open = view.causes.filter((c) => !c.ruledOut);
   const stop = open.some((c) => c.safetyCritical);
   const resolved = view.session.status === "resolved";
@@ -50,6 +54,18 @@ async function Diagnosis({ params, searchParams }: PageProps<"/diagnostics/[id]"
         <h1 className="text-xl">{view.session.symptom}</h1>
         {resolved && <p className="badge badge-green mt-2">Fixed: {view.session.resolutionNote ?? "resolved"}</p>}
       </header>
+      {photos.length > 0 && (
+        <ul className="flex gap-2 overflow-x-auto" aria-label="Photos" data-no-swipe>
+          {photos.map((p, i) => (
+            <li key={p.id} className="shrink-0">
+              <a href={`/api/attachments/${p.id}`} target="_blank" rel="noopener">
+                {/* eslint-disable-next-line @next/next/no-img-element -- private, authenticated bytes; not optimizable */}
+                <img src={`/api/attachments/${p.id}`} alt={`Photo ${i + 1} of the problem`} className="size-24 rounded-[var(--radius-md)] object-cover" />
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
       {typeof error === "string" && <p role="alert" className="alert-item alert-item-yellow">{error}</p>}
       {stop && (
         <p role="alert" className="alert-item alert-item-red">

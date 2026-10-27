@@ -5,7 +5,7 @@ import { logServiceAction } from "@/app/(app)/actions";
 import { readServiceReceiptAction } from "@/app/(app)/ai-actions";
 import { PhotoButton } from "./PhotoButton";
 import { Sheet } from "@/components/ui/Sheet";
-import { formatCurrency, formatDate } from "@/domain/format";
+import { formatCurrency, formatDate, formatMileage } from "@/domain/format";
 import type { BoardEquipment, BoardSchedule } from "@/domain/workboard";
 
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -86,8 +86,9 @@ export function LogServiceSheet({ unit, schedules, scheduleId, open, onClose }: 
           {meter && (
             <div className="form-group">
               <label className="form-label" htmlFor="svc-reading">{meter}</label>
+              {/* Left blank on purpose: a prefilled value can be stale and would re-assert an old reading. */}
               <input id="svc-reading" name="reading" className="form-input font-mono" inputMode="numeric" pattern="[0-9]*"
-                defaultValue={(unit.type === "reefer" ? unit.currentHours : unit.currentMileage) ?? ""} />
+                placeholder={(() => { const c = unit.type === "reefer" ? unit.currentHours : unit.currentMileage; return c != null ? `On file: ${formatMileage(c)}` : "From the invoice"; })()} />
             </div>
           )}
           <div className="form-group">

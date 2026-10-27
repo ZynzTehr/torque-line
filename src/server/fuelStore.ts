@@ -6,6 +6,7 @@ import type { AppDb } from "./fleetStore";
 import { getEquipment } from "./equipmentStore";
 import { invalid, notFound, type Actor, type Failure } from "./result";
 import { listServiceRecords } from "./serviceStore";
+import { advanceMeterFromEvidence, observedAtFromDate } from "./readingsStore";
 
 const lineInput = z.object({
   equipmentId: z.string(),
@@ -62,19 +63,7 @@ export async function addFuelStop(db: AppDb, actor: Actor, input: FuelStopInput)
     for (const it of purchase.items) {
       const reading = it.fuelType === "reefer" ? it.hours : it.odometer;
       if (reading == null) continue;
-      const [unit] = await tx.select().from(schema.equipment)
-        .where(and(eq(schema.equipment.fleetId, actor.fleetId), eq(schema.equipment.id, String(it.equipmentId)))).for("update");
-      const isReefer = unit.type === "reefer";
-      const current = isReefer ? unit.currentHours : unit.currentMileage;
-      if (current != null && reading < current) continue;
-      await tx.insert(schema.readings).values({
-        fleetId: actor.fleetId, equipmentId: unit.id, kind: isReefer ? "hours" : "odometer", value: reading,
-        observedAt: new Date(`${purchase.date}T12:00:00Z`), source: "fuel", createdBy: actor.userId,
-      });
-      await tx.update(schema.equipment)
-        .set(isReefer ? { currentHours: reading, readingUpdatedAt: new Date(), updatedAt: new Date() }
-          : { currentMileage: reading, readingUpdatedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(schema.equipment.fleetId, actor.fleetId), eq(schema.equipment.id, unit.id)));
+      await advanceMeterFromEvidence(tx, actor, { equipmentId: String(it.equipmentId), value: reading, observedAt: observedAtFromDate(purchase.date), source: "fuel" });
     }
     return { ok: true as const, id: stop.id };
   });
