@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
 import { saveAttachment } from "@/server/attachmentsStore";
-import { exportFleet, type ExportSummary } from "@/server/exportStore";
+import { exportFleet, type ExportOptions, type ExportSummary } from "@/server/exportStore";
 import { memoryObjectStore, type ObjectStore } from "@/server/objectStore";
 import { createTestDb, seedFleet, type TestDb } from "../helpers/testDb";
 
@@ -90,7 +90,7 @@ beforeAll(async () => {
   const [stopB] = await db.insert(schema.fuelStops).values({ fleetId: b.fleetId, date: "2026-10-15", station: "B-SECRET-STATION", total: 10, createdBy: "user-b" }).returning();
   await db.insert(schema.fuelLines).values({ fleetId: b.fleetId, stopId: stopB.id, equipmentId: b.equipmentId, product: "diesel", subtotal: 10 });
 
-  files = unzipSync(await collect(await exportFleet(db, store, a.fleetId, new Date("2026-10-27T15:00:00Z"))));
+  files = unzipSync(await collect(await exportFleet(db, store, a.fleetId, { now: new Date("2026-10-27T15:00:00Z") })));
 });
 afterAll(() => close());
 
@@ -165,12 +165,24 @@ describe("owner data export", () => {
     expect(json.scheduleItems).toHaveLength(1);
     expect(json.missingFiles).toEqual(["receipts/2026-10-14 T9 diagnosis lights flicker (2).jpg"]);
     expect(json.unreadableFiles).toEqual([]);
+    expect(json.skippedFiles).toEqual([]);
+  });
+
+  it("describes every photo in fleet.json, and dates the diagnosis causes", () => {
+    const json = JSON.parse(text("fleet.json"));
+    expect(json.photos).toEqual([
+      { file: "receipts/2026-10-14 101 oil change.jpg", inZip: true, kind: "service_receipt", recordId: ids.record, contentType: "image/jpeg", byteSize: 11, uploadedAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+      { file: "receipts/2026-10-15 101 R12 fuel pilot #4.png", inZip: true, kind: "fuel_receipt", recordId: ids.stop, contentType: "image/png", byteSize: 8, uploadedAt: expect.any(String) },
+      { file: "receipts/2026-10-14 T9 diagnosis lights flicker.jpg", inZip: true, kind: "diagnostic_photo", recordId: ids.diag, contentType: "image/jpeg", byteSize: 8, uploadedAt: expect.any(String) },
+      { file: "receipts/2026-10-14 T9 diagnosis lights flicker (2).jpg", inZip: false, kind: "diagnostic_photo", recordId: ids.diag, contentType: "image/jpeg", byteSize: 8, uploadedAt: expect.any(String) },
+    ]);
+    expect(json.diagnostics[0].causes[0]).toMatchObject({ createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), updatedAt: expect.any(String) });
   });
 });
 
 describe("export when storage misbehaves", () => {
-  const unzipExport = async (s: ObjectStore, fleetId = a.fleetId, onDone?: (x: ExportSummary) => void) =>
-    unzipSync(await collect(await exportFleet(db, s, fleetId, new Date("2026-10-27T15:00:00Z"), onDone)));
+  const unzipExport = async (s: ObjectStore, fleetId = a.fleetId, options: ExportOptions = {}) =>
+    unzipSync(await collect(await exportFleet(db, s, fleetId, { now: new Date("2026-10-27T15:00:00Z"), ...options })));
   const keyOf = async (kind: "service_receipt" | "fuel_receipt") =>
     (await db.select().from(schema.attachments).where(eq(schema.attachments.kind, kind))).find((r) => r.fleetId === a.fleetId)!.storageKey;
   const providerError = () => Object.assign(new Error("socket hang up"), { name: "FilesError", code: "Provider" });
@@ -187,7 +199,7 @@ describe("export when storage misbehaves", () => {
       },
     };
     let summary: ExportSummary | undefined;
-    const zip = await unzipExport(flaky, a.fleetId, (x) => { summary = x; });
+    const zip = await unzipExport(flaky, a.fleetId, { onDone: (x) => { summary = x; } });
 
     expect(Object.keys(zip).filter((n) => n.startsWith("receipts/")).sort()).toEqual([
       "receipts/2026-10-14 T9 diagnosis lights flicker.jpg", "receipts/2026-10-15 101 R12 fuel pilot #4.png",
@@ -224,5 +236,57 @@ describe("export when storage misbehaves", () => {
     const photos = Object.keys(zip).filter((n) => n.startsWith("receipts/"));
     expect(photos).toEqual(Array.from({ length: 10 }, (_, i) => `receipts/2026-09-${10 + i} 500 wash.jpg`));
     expect(strFromU8(zip["receipts/2026-09-13 500 wash.jpg"])).toContain("WASH-13");
+  });
+
+  it("gives up on a photo storage never answers, aborting the request, and still finishes the zip", async () => {
+    const serviceKey = await keyOf("service_receipt");
+    const signals: AbortSignal[] = [];
+    const hanging: ObjectStore = {
+      ...store,
+      get(key, options) {
+        if (key !== serviceKey) return store.get(key);
+        signals.push(options!.signal!);
+        return new Promise(() => {});
+      },
+    };
+    let summary: ExportSummary | undefined;
+    const zip = await unzipExport(hanging, a.fleetId, { photoTimeoutMs: 20, onDone: (x) => { summary = x; } });
+
+    expect(signals.map((s) => s.aborted)).toEqual([true, true]); // tried twice, each try cancelled
+    const json = JSON.parse(strFromU8(zip["fleet.json"]));
+    expect(json.unreadableFiles).toEqual(["receipts/2026-10-14 101 oil change.jpg"]);
+    expect(Object.keys(zip).filter((n) => n.startsWith("receipts/")).sort()).toEqual([
+      "receipts/2026-10-14 T9 diagnosis lights flicker.jpg", "receipts/2026-10-15 101 R12 fuel pilot #4.png",
+    ]);
+    expect(summary).toMatchObject({ photos: 2, unreadable: 1, errors: ["TimeoutError"], cancelled: false });
+  });
+
+  it("leaves the remaining photos out once the time budget is spent, so the zip still finishes", async () => {
+    let gets = 0;
+    const counting: ObjectStore = { ...store, get(key) { gets++; return store.get(key); } };
+    let summary: ExportSummary | undefined;
+    const zip = await unzipExport(counting, a.fleetId, { photoBudgetMs: 0, onDone: (x) => { summary = x; } });
+
+    expect(gets).toBe(0);
+    expect(Object.keys(zip).filter((n) => n.startsWith("receipts/"))).toEqual([]);
+    const json = JSON.parse(strFromU8(zip["fleet.json"]));
+    expect(json.skippedFiles).toEqual([
+      "receipts/2026-10-14 101 oil change.jpg", "receipts/2026-10-15 101 R12 fuel pilot #4.png",
+      "receipts/2026-10-14 T9 diagnosis lights flicker.jpg", "receipts/2026-10-14 T9 diagnosis lights flicker (2).jpg",
+    ]);
+    expect(json.serviceRecords[0].receiptFiles).toEqual([]);
+    expect(strFromU8(zip["fuel.csv"])).not.toContain(".png");
+    expect(summary).toMatchObject({ photos: 0, skipped: 4 });
+  });
+
+  it("stops adding photos before the zip outgrows what it can address, listing the rest as skipped", async () => {
+    const zip = await unzipExport(store, a.fleetId, { maxPhotoBytes: 19 });
+
+    expect(Object.keys(zip).filter((n) => n.startsWith("receipts/")).sort()).toEqual([
+      "receipts/2026-10-14 101 oil change.jpg", "receipts/2026-10-15 101 R12 fuel pilot #4.png",
+    ]);
+    const json = JSON.parse(strFromU8(zip["fleet.json"]));
+    expect(json.skippedFiles).toEqual(["receipts/2026-10-14 T9 diagnosis lights flicker.jpg"]);
+    expect(json.missingFiles).toEqual(["receipts/2026-10-14 T9 diagnosis lights flicker (2).jpg"]);
   });
 });

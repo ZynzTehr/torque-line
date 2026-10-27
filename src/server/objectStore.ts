@@ -3,7 +3,8 @@ import "server-only";
 /** The slice of object storage the app uses; the Neon bucket in production, memory in tests. */
 export interface ObjectStore {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
-  get(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null>;
+  /** `signal` aborts the request, including its retries. */
+  get(key: string, options?: { signal?: AbortSignal }): Promise<{ bytes: Uint8Array; contentType: string } | null>;
   delete(key: string): Promise<void>;
 }
 
@@ -21,10 +22,10 @@ export async function neonObjectStore(): Promise<ObjectStore> {
   const files = new Files({ adapter: neon({ bucket: ATTACHMENTS_BUCKET }) });
   neonStore = {
     async put(key, bytes, contentType) { await files.upload(key, bytes, { contentType }); },
-    async get(key) {
+    async get(key, options) {
       // One round trip: a missing object comes back as NotFound. Transient provider errors are retried.
       try {
-        const file = await files.download(key, { retries: 2 });
+        const file = await files.download(key, { retries: 2, signal: options?.signal });
         return { bytes: new Uint8Array(await file.arrayBuffer()), contentType: file.contentType };
       } catch (error) {
         if (error instanceof FilesError && error.code === "NotFound") return null;

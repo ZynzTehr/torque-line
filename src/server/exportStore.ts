@@ -11,29 +11,32 @@ export const EXPORT_FORMAT_VERSION = 1;
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 const byUnitNumber = new Intl.Collator("en", { numeric: true, sensitivity: "base" }).compare;
 
-/** Every row the fleet owns, read up front so a database error fails the request before any bytes are sent. */
+/**
+ * Every row the fleet owns, read up front so a database error fails the request before any bytes are sent.
+ * One read-only snapshot: a fuel stop saved mid-export is in every table or in none.
+ */
 async function loadFleet(db: AppDb, fleetId: string) {
   const s = schema;
-  const [[fleet], units, readings, schedules, records, stops, lines, sessions, causes, turns, attachments] = await Promise.all([
-    db.select().from(s.fleets).where(eq(s.fleets.id, fleetId)),
-    db.select().from(s.equipment).where(eq(s.equipment.fleetId, fleetId)),
-    db.select().from(s.readings).where(eq(s.readings.fleetId, fleetId)).orderBy(asc(s.readings.observedAt), asc(s.readings.createdAt)),
-    db.select().from(s.maintenanceSchedules).where(eq(s.maintenanceSchedules.fleetId, fleetId)).orderBy(asc(s.maintenanceSchedules.createdAt)),
-    db.select().from(s.serviceRecords).where(eq(s.serviceRecords.fleetId, fleetId)).orderBy(asc(s.serviceRecords.date), asc(s.serviceRecords.createdAt)),
-    db.select().from(s.fuelStops).where(eq(s.fuelStops.fleetId, fleetId)).orderBy(asc(s.fuelStops.date), asc(s.fuelStops.createdAt)),
-    db.select().from(s.fuelLines).where(eq(s.fuelLines.fleetId, fleetId)).orderBy(asc(s.fuelLines.product)),
-    db.select().from(s.diagnosticSessions).where(eq(s.diagnosticSessions.fleetId, fleetId)).orderBy(asc(s.diagnosticSessions.createdAt)),
-    db.select().from(s.diagnosticCauses).where(eq(s.diagnosticCauses.fleetId, fleetId)).orderBy(asc(s.diagnosticCauses.rank)),
-    db.select().from(s.diagnosticTurns).where(eq(s.diagnosticTurns.fleetId, fleetId)).orderBy(asc(s.diagnosticTurns.seq)),
-    db.select().from(s.attachments).where(eq(s.attachments.fleetId, fleetId)).orderBy(asc(s.attachments.createdAt), asc(s.attachments.id)),
-  ]);
+  const [[fleet], units, readings, schedules, records, stops, lines, sessions, causes, turns, attachments] = await db.transaction((tx) => Promise.all([
+    tx.select().from(s.fleets).where(eq(s.fleets.id, fleetId)),
+    tx.select().from(s.equipment).where(eq(s.equipment.fleetId, fleetId)),
+    tx.select().from(s.readings).where(eq(s.readings.fleetId, fleetId)).orderBy(asc(s.readings.observedAt), asc(s.readings.createdAt)),
+    tx.select().from(s.maintenanceSchedules).where(eq(s.maintenanceSchedules.fleetId, fleetId)).orderBy(asc(s.maintenanceSchedules.createdAt)),
+    tx.select().from(s.serviceRecords).where(eq(s.serviceRecords.fleetId, fleetId)).orderBy(asc(s.serviceRecords.date), asc(s.serviceRecords.createdAt)),
+    tx.select().from(s.fuelStops).where(eq(s.fuelStops.fleetId, fleetId)).orderBy(asc(s.fuelStops.date), asc(s.fuelStops.createdAt)),
+    tx.select().from(s.fuelLines).where(eq(s.fuelLines.fleetId, fleetId)).orderBy(asc(s.fuelLines.product)),
+    tx.select().from(s.diagnosticSessions).where(eq(s.diagnosticSessions.fleetId, fleetId)).orderBy(asc(s.diagnosticSessions.createdAt)),
+    tx.select().from(s.diagnosticCauses).where(eq(s.diagnosticCauses.fleetId, fleetId)).orderBy(asc(s.diagnosticCauses.rank)),
+    tx.select().from(s.diagnosticTurns).where(eq(s.diagnosticTurns.fleetId, fleetId)).orderBy(asc(s.diagnosticTurns.seq)),
+    tx.select().from(s.attachments).where(eq(s.attachments.fleetId, fleetId)).orderBy(asc(s.attachments.createdAt), asc(s.attachments.id)),
+  ]), { isolationLevel: "repeatable read", accessMode: "read only" });
   if (!fleet) throw new Error("Export requested for a fleet that does not exist");
   units.sort((x, y) => Number(!!x.archivedAt) - Number(!!y.archivedAt) || byUnitNumber(x.unitNumber, y.unitNumber));
   return { fleet, units, readings, schedules, records, stops, lines, sessions, causes, turns, attachments };
 }
 
 type Loaded = Awaited<ReturnType<typeof loadFleet>>;
-type Photo = { path: string; storageKey: string; parentId: string };
+type Photo = { path: string; attachment: Loaded["attachments"][number] };
 
 /** A readable, unique receipts/ path for every attachment row, named after the record it belongs to. */
 function namePhotos(d: Loaded): Photo[] {
@@ -56,15 +59,19 @@ function namePhotos(d: Loaded): Photo[] {
     return photoName({ ...base, date: s ? dateInZone(s.createdAt, d.fleet.timezone) : "", units: s ? [unitNo.get(s.equipmentId) ?? ""] : [],
       label: `diagnosis ${(s?.symptom ?? "").slice(0, 40)}` });
   });
-  return uniqueNames(names).map((name, i) => ({ path: `receipts/${name}`, storageKey: d.attachments[i].storageKey, parentId: d.attachments[i].parentId }));
+  return uniqueNames(names).map((name, i) => ({ path: `receipts/${name}`, attachment: d.attachments[i] }));
 }
 
+/** Photos that are not in the zip, by reason; each is a receipts/ path. */
+type LeftOut = { missing: string[]; unreadable: string[]; skipped: string[] };
+
 /** The CSVs and fleet.json, referencing only the photos that actually made it into the zip. */
-function dataFiles(d: Loaded, included: Photo[], missing: string[], unreadable: string[], exportedAt: Date): [string, string][] {
+function dataFiles(d: Loaded, all: Photo[], included: Photo[], out: LeftOut, exportedAt: Date): [string, string][] {
   const unitNo = new Map(d.units.map((u) => [u.id, u.unitNumber]));
   const scheduleName = new Map(d.schedules.map((s) => [s.id, s.name]));
   const photosOf = new Map<string, string[]>();
-  for (const p of included) photosOf.set(p.parentId, [...(photosOf.get(p.parentId) ?? []), p.path]);
+  for (const p of included) photosOf.set(p.attachment.parentId, [...(photosOf.get(p.attachment.parentId) ?? []), p.path]);
+  const inZip = new Set(included);
   const photos = (id: string) => photosOf.get(id) ?? [];
   const linesOf = (stopId: string) => d.lines.filter((l) => l.stopId === stopId);
   const causesOf = (sessionId: string) => d.causes.filter((c) => c.sessionId === sessionId);
@@ -113,7 +120,8 @@ function dataFiles(d: Loaded, included: Photo[], missing: string[], unreadable: 
     formatVersion: EXPORT_FORMAT_VERSION,
     exportedAt: exportedAt.toISOString(),
     conventions: "Timestamps are ISO 8601 UTC; dates are YYYY-MM-DD. Money and gallons are decimal strings. Photo paths are relative to this file. " +
-      "missingFiles are photos whose file is gone from storage; unreadableFiles are photos storage would not return this time, so exporting again may include them.",
+      "missingFiles are photos whose file is gone from storage; unreadableFiles are photos storage would not return this time, so exporting again may include them; " +
+      "skippedFiles are photos left out because the export reached its time or size limit. They are all still in your account.",
     fleet: { id: d.fleet.id, name: d.fleet.name, timezone: d.fleet.timezone, createdAt: iso(d.fleet.createdAt) },
     units: d.units.map((u) => ({
       id: u.id, unitNumber: u.unitNumber, type: u.type, year: u.year, make: u.make, model: u.model, engine: u.engineSize, vin: u.vin,
@@ -146,12 +154,17 @@ function dataFiles(d: Loaded, included: Photo[], missing: string[], unreadable: 
       photoFiles: photos(s.id), createdAt: iso(s.createdAt), updatedAt: iso(s.updatedAt),
       causes: causesOf(s.id).map((c) => ({
         id: c.id, rank: c.rank, name: c.name, likelihood: c.likelihood, why: c.why, howToCheck: c.howToCheck, costTier: c.costTier,
-        safetyCritical: c.safetyCritical, needsShop: c.needsShop, tried: c.tried, ruledOut: c.ruledOut,
+        safetyCritical: c.safetyCritical, needsShop: c.needsShop, tried: c.tried, ruledOut: c.ruledOut, createdAt: iso(c.createdAt), updatedAt: iso(c.updatedAt),
       })),
       conversation: d.turns.filter((t) => t.sessionId === s.id).map((t) => ({ seq: t.seq, role: t.role, content: t.content, createdAt: iso(t.createdAt) })),
     })),
-    missingFiles: missing,
-    unreadableFiles: unreadable,
+    photos: all.map((p) => ({
+      file: p.path, inZip: inZip.has(p), kind: p.attachment.kind, recordId: p.attachment.parentId, contentType: p.attachment.contentType,
+      byteSize: p.attachment.byteSize, uploadedAt: iso(p.attachment.createdAt),
+    })),
+    missingFiles: out.missing,
+    unreadableFiles: out.unreadable,
+    skippedFiles: out.skipped,
   };
 
   return [
@@ -161,25 +174,53 @@ function dataFiles(d: Loaded, included: Photo[], missing: string[], unreadable: 
 }
 
 /** What one export did, for the operator's log. Counts and error codes only: no keys, names or file paths. */
-export interface ExportSummary { photos: number; missing: number; unreadable: number; errors: string[]; bytes: number; ms: number; cancelled: boolean }
+export interface ExportSummary {
+  photos: number; missing: number; unreadable: number; skipped: number; errors: string[]; bytes: number; ms: number; cancelled: boolean;
+}
+
+export interface ExportOptions {
+  /** The export's timestamp, in fleet.json and on every zip entry. */
+  now?: Date;
+  onDone?: (summary: ExportSummary) => void;
+  /** Per try. A photo storage doesn't return in time is tried once more, then listed as unreadable. */
+  photoTimeoutMs?: number;
+  /** Time after which the remaining photos are skipped, so the zip and fleet.json finish before the function's limit. */
+  photoBudgetMs?: number;
+  /** Photo bytes after which the rest are skipped: fflate writes no Zip64, so the archive must stay under 4 GB. */
+  maxPhotoBytes?: number;
+}
 
 /** Photos fetched ahead of the client's reads, so storage latency overlaps the download. Bounds memory to a few photos. */
 const PREFETCH = 4;
-type Fetched = { photo: Photo; bytes: Uint8Array | null; error?: string };
+type Fetched = { bytes: Uint8Array | null; error?: string };
 
 const errorCode = (error: unknown) => {
   const e = error as { name?: string; code?: string } | null;
   return `${e?.name ?? typeof error}${e?.code ? ` (${e.code})` : ""}`;
 };
 
-/** One photo's bytes, null when the object is gone, or an error code after a second failed try. Never rejects. */
-async function fetchPhoto(store: ObjectStore, photo: Photo): Promise<Fetched> {
+/**
+ * One photo's bytes, null when the object is gone, or an error code after a second failed try. Never rejects.
+ * A try that runs past the timeout is aborted: a stalled GET would otherwise hold the whole stream.
+ */
+async function fetchPhoto(store: ObjectStore, photo: Photo, timeoutMs: number): Promise<Fetched> {
   for (let attempt = 1; ; attempt++) {
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = Object.assign(new Error("Storage did not answer in time"), { name: "TimeoutError" });
+        abort.abort(error);
+        reject(error);
+      }, timeoutMs);
+    });
     try {
-      const object = await store.get(photo.storageKey);
-      return { photo, bytes: object?.bytes ?? null };
+      const object = await Promise.race([store.get(photo.attachment.storageKey, { signal: abort.signal }), timedOut]);
+      return { bytes: object?.bytes ?? null };
     } catch (error) {
-      if (attempt >= 2) return { photo, bytes: null, error: errorCode(error) };
+      if (attempt >= 2) return { bytes: null, error: errorCode(error) };
+    } finally {
+      clearTimeout(timer);
     }
   }
 }
@@ -187,25 +228,36 @@ async function fetchPhoto(store: ObjectStore, photo: Photo): Promise<Fetched> {
 /**
  * The fleet's whole history as a zip stream: receipts/ first (a few photos fetched ahead, pulled only as fast
  * as the client reads), then the CSVs and fleet.json. A photo whose object is gone from the bucket is listed in
- * fleet.json `missingFiles`, and one storage would not return in `unreadableFiles`; neither is referenced by a
- * CSV, and neither stops the rest of the export.
+ * fleet.json `missingFiles`, one storage would not return in `unreadableFiles`, and one left out at the time or
+ * size limit in `skippedFiles`; none of them is referenced by a CSV, and none stops the rest of the export.
  */
-export async function exportFleet(db: AppDb, store: ObjectStore, fleetId: string, now = new Date(),
-  onDone?: (summary: ExportSummary) => void): Promise<ReadableStream<Uint8Array>> {
+export async function exportFleet(db: AppDb, store: ObjectStore, fleetId: string, {
+  now = new Date(), onDone, photoTimeoutMs = 20_000, photoBudgetMs = 240_000, maxPhotoBytes = 3_500_000_000,
+}: ExportOptions = {}): Promise<ReadableStream<Uint8Array>> {
   const started = Date.now();
   const loaded = await loadFleet(db, fleetId);
   const photos = namePhotos(loaded);
   const included: Photo[] = [];
-  const missing: string[] = [];
-  const unreadable: string[] = [];
+  const out: LeftOut = { missing: [], unreadable: [], skipped: [] };
   const errors: string[] = [];
-  const ahead: Promise<Fetched>[] = [];
+  const ahead: { photo: Photo; fetched: Promise<Fetched> }[] = [];
   let next = 0;
+  let photoBytes = 0;
   let bytes = 0;
   let zip: Zip;
-  const fill = () => { while (ahead.length < PREFETCH && next < photos.length) ahead.push(fetchPhoto(store, photos[next++])); };
+  const fill = () => {
+    while (ahead.length < PREFETCH && next < photos.length) {
+      const photo = photos[next++];
+      ahead.push({ photo, fetched: fetchPhoto(store, photo, photoTimeoutMs) });
+    }
+  };
+  const skipRest = () => {
+    out.skipped.push(...ahead.splice(0).map((a) => a.photo.path), ...photos.slice(next).map((p) => p.path));
+    next = photos.length;
+  };
   const done = (cancelled: boolean) => onDone?.({
-    photos: included.length, missing: missing.length, unreadable: unreadable.length, errors, bytes, ms: Date.now() - started, cancelled,
+    photos: included.length, missing: out.missing.length, unreadable: out.unreadable.length, skipped: out.skipped.length,
+    errors, bytes, ms: Date.now() - started, cancelled,
   });
 
   return new ReadableStream<Uint8Array>({
@@ -218,13 +270,19 @@ export async function exportFleet(db: AppDb, store: ObjectStore, fleetId: string
       });
     },
     async pull() {
-      // Each pull must enqueue something, or the stream stalls: skip past missing and unreadable objects in one call.
-      fill();
-      while (ahead.length) {
-        const { photo, bytes: body, error } = await ahead.shift()!;
+      // Each pull must enqueue something, or the stream stalls: skip past photos that aren't added in one call.
+      for (;;) {
+        if (Date.now() - started >= photoBudgetMs) skipRest();
         fill();
-        if (error) { unreadable.push(photo.path); errors.push(error); continue; }
-        if (!body) { missing.push(photo.path); continue; }
+        const head = ahead.shift();
+        if (!head) break;
+        const { photo } = head;
+        const { bytes: body, error } = await head.fetched;
+        fill();
+        if (error) { out.unreadable.push(photo.path); errors.push(error); continue; }
+        if (!body) { out.missing.push(photo.path); continue; }
+        if (photoBytes + body.byteLength > maxPhotoBytes) { out.skipped.push(photo.path); continue; }
+        photoBytes += body.byteLength;
         const entry = new ZipPassThrough(photo.path); // photos are already compressed
         entry.mtime = now;
         zip.add(entry);
@@ -233,7 +291,7 @@ export async function exportFleet(db: AppDb, store: ObjectStore, fleetId: string
         return;
       }
       const encoder = new TextEncoder();
-      for (const [name, body] of dataFiles(loaded, included, missing, unreadable, now)) {
+      for (const [name, body] of dataFiles(loaded, photos, included, out, now)) {
         const entry = new ZipDeflate(name, { level: 6 });
         entry.mtime = now;
         zip.add(entry);
