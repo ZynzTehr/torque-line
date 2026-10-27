@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
-import { listAttachments, readAttachment, saveAttachment } from "@/server/attachmentsStore";
+import { deleteAttachments, latestAttachmentIds, listAttachments, readAttachment, saveAttachment } from "@/server/attachmentsStore";
 import { memoryObjectStore } from "@/server/objectStore";
 import { createSession } from "@/server/diagnosticsStore";
 import { createTestDb, seedFleet, type TestDb } from "../helpers/testDb";
@@ -67,5 +67,23 @@ describe("attachments", () => {
     const [rec] = await db.insert(schema.serviceRecords).values({ fleetId: a.fleetId, equipmentId: a.equipmentId, date: "2026-10-01", serviceType: "Oil", createdBy: "user-a" }).returning();
     expect(await saveAttachment(db, store, { fleetId: a.fleetId, userId: "user-a" }, { kind: "service_receipt", parentId: rec.id, bytes: jpeg, contentType: "image/jpeg" })).toMatchObject({ ok: true });
     expect(await saveAttachment(db, store, { fleetId: a.fleetId, userId: "user-a" }, { kind: "fuel_receipt", parentId: rec.id, bytes: jpeg, contentType: "image/jpeg" })).toMatchObject({ ok: false, code: "not-found" });
+  });
+
+  it("finds the newest receipt per record and removes a record's files from storage, only within the fleet", async () => {
+    const actorA = { fleetId: a.fleetId, userId: "user-a" };
+    const [rec] = await db.insert(schema.serviceRecords).values({ fleetId: a.fleetId, equipmentId: a.equipmentId, date: "2026-10-02", serviceType: "Tires", createdBy: "user-a" }).returning();
+    const first = await saveAttachment(db, store, actorA, { kind: "service_receipt", parentId: rec.id, bytes: jpeg, contentType: "image/jpeg" });
+    await new Promise((r) => setTimeout(r, 5));
+    const second = await saveAttachment(db, store, actorA, { kind: "service_receipt", parentId: rec.id, bytes: jpeg, contentType: "image/jpeg" });
+    if (!first.ok || !second.ok) throw new Error("setup");
+    expect((await latestAttachmentIds(db, a.fleetId, "service_receipt", [rec.id, "not-a-uuid"])).get(rec.id)).toBe(second.attachment.id);
+    expect((await latestAttachmentIds(db, b.fleetId, "service_receipt", [rec.id])).size).toBe(0);
+
+    expect(await deleteAttachments(db, store, b.fleetId, { kind: "service_receipt", parentId: rec.id })).toBe(0);
+    expect(await deleteAttachments(db, store, a.fleetId, { id: first.attachment.id })).toBe(1);
+    expect(store.keys()).not.toContain(first.attachment.storageKey);
+    expect(await deleteAttachments(db, store, a.fleetId, { kind: "service_receipt", parentId: rec.id })).toBe(1);
+    expect(store.keys()).not.toContain(second.attachment.storageKey);
+    expect(await listAttachments(db, a.fleetId, "service_receipt", rec.id)).toEqual([]);
   });
 });

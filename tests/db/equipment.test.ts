@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import * as schema from "@/db/schema";
 import { createEquipment, getEquipment, listEquipment, updateEquipment, archiveEquipment } from "@/server/equipmentStore";
 import { createTestDb, seedFleet, type TestDb } from "../helpers/testDb";
 
@@ -39,11 +41,23 @@ describe("equipment store", () => {
     expect(await archiveEquipment(db, a.fleetId, b.equipmentId)).toMatchObject({ ok: false, code: "not-found" });
   });
 
-  it("hides archived units from the list but keeps them retrievable", async () => {
+  it("removes a unit from the fleet, accepts nothing new for it, and frees its number", async () => {
     const created = await createEquipment(db, a.fleetId, { unitNumber: "OLD-1", type: "trailer" });
     if (!created.ok) throw new Error("setup");
-    await archiveEquipment(db, a.fleetId, created.equipment.id);
+    expect(await archiveEquipment(db, a.fleetId, created.equipment.id)).toEqual({ ok: true });
     expect((await listEquipment(db, a.fleetId)).map((e) => e.unitNumber)).not.toContain("OLD-1");
-    expect(await getEquipment(db, a.fleetId, created.equipment.id)).toMatchObject({ unitNumber: "OLD-1" });
+    expect(await getEquipment(db, a.fleetId, created.equipment.id)).toBeNull();
+    expect(await updateEquipment(db, a.fleetId, created.equipment.id, { notes: "x" })).toMatchObject({ ok: false, code: "not-found" });
+    const reused = await createEquipment(db, a.fleetId, { unitNumber: "old-1", type: "tractor" });
+    expect(reused).toMatchObject({ ok: true, equipment: { unitNumber: "old-1" } });
+    expect(await db.select().from(schema.equipment).where(eq(schema.equipment.normalizedUnitNumber, "OLD-1"))).toHaveLength(2);
+  });
+
+  it("edits a unit's details and reports a clash with another unit's number", async () => {
+    const created = await createEquipment(db, a.fleetId, { unitNumber: "E-7", type: "tractor" });
+    if (!created.ok) throw new Error("setup");
+    expect(await updateEquipment(db, a.fleetId, created.equipment.id, { unitNumber: "E-8", make: "Kenworth", notes: "New clutch 2026" }))
+      .toMatchObject({ ok: true, equipment: { unitNumber: "E-8", make: "Kenworth", notes: "New clutch 2026" } });
+    expect(await updateEquipment(db, a.fleetId, created.equipment.id, { unitNumber: "old-1" })).toMatchObject({ ok: false, code: "duplicate-unit" });
   });
 });

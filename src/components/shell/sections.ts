@@ -4,6 +4,7 @@ import type { IconName } from "@/components/icons";
 export const SECTIONS: { href: string; label: string; icon: IconName }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
   { href: "/equipment", label: "Equipment", icon: "truck" },
+  { href: "/records", label: "Records", icon: "fileText" },
   { href: "/fuel", label: "Fuel", icon: "fuel" },
   { href: "/diagnostics", label: "Diagnostics", icon: "wrench" },
 ];
