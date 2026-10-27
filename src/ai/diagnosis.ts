@@ -18,7 +18,16 @@ export const MAX_CAUSES = 8;
 export const MAX_QUESTIONS = 3;
 
 /** Defense in depth: if the text names a safety system, treat it as safety-critical regardless of the model's flag. */
-const SAFETY_SYSTEMS = /\b(brakes?|braking|abs|slack adjuster|brake chamber|steering|tie rod|drag link|king ?pin|air (?:leak|line|lines|pressure|system|dryer|tank|governor)|tires?|tyres?|blowout|wheel (?:seal|bearing|end|nut|lug)|lug nuts?|fuel leak|leaking fuel|diesel leak|exhaust (?:in|into|leak into) (?:the )?cab|carbon monoxide|fifth wheel|coupling|glad ?hands?|suspension|spring hanger|leaf spring|frame crack)\b/i;
+const SAFETY_SYSTEMS = new RegExp([
+  String.raw`\bbrak(?:e|es|ing)\b`, String.raw`\babs\b`, String.raw`\bslack adjusters?\b`, String.raw`\bbrake chambers?\b`, String.raw`\btreadle\b`,
+  String.raw`\bsteer(?:ing)?\b`, String.raw`\btie rods?\b`, String.raw`\bdrag links?\b`, String.raw`\bking ?pins?\b`,
+  String.raw`\bair (?:leaks?|leaking|lines?|hoses?|pressure|system|dryers?|tanks?|governors?|bags?)\b`, String.raw`\bair ?bags?\b`,
+  String.raw`\b(?:tires?|tyres?|blowouts?)\b`, String.raw`\bwheels?\b`, String.raw`\b(?:wheel )?(?:bearings?|rims?|lug nuts?|lugs?)\b`, String.raw`\bhubs?\b`,
+  String.raw`\bfuel (?:leak\w*)\b`, String.raw`\bleak\w* (?:fuel|diesel)\b`, String.raw`\bdiesel leak\w*\b`,
+  String.raw`\bexhaust\b.*\bcab\b`, String.raw`\bcarbon monoxide\b`,
+  String.raw`\bfifth wheel\b`, String.raw`\bcoupl(?:ing|er)\b`, String.raw`\bglad ?hands?\b`,
+  String.raw`\bsuspension\b`, String.raw`\bspring hangers?\b`, String.raw`\bleaf springs?\b`, String.raw`\bframe (?:cracks?|cracked|rails?)\b`, String.raw`\bcracked frame\b`,
+].join("|"), "i");
 
 const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 

@@ -8,6 +8,8 @@ import { equipmentReading, serviceStatus } from "@/domain/maintenance";
 import { ApplyScheduleButton, UnitActions } from "@/components/fleet/UnitActions";
 import { ScheduleItemRow } from "@/components/fleet/ScheduleItemActions";
 import { SuggestIntervals } from "@/components/fleet/SuggestIntervals";
+import { UnitCosts } from "@/components/fleet/UnitCosts";
+import { unitCostSummary } from "@/server/fuelStore";
 import { getEquipment } from "@/server/equipmentStore";
 import { requireFleet } from "@/server/fleet";
 import { toBoardEquipment, toBoardSchedule } from "@/server/fleetView";
@@ -37,7 +39,7 @@ async function UnitDetail({ params }: { params: Promise<{ id: string }> }) {
   const db = getDb();
   const row = await getEquipment(db, fleetId, id);
   if (!row) notFound();
-  const [scheduleRows, records] = await Promise.all([listSchedules(db, fleetId, id), listServiceRecords(db, fleetId, id)]);
+  const [scheduleRows, records, costs] = await Promise.all([listSchedules(db, fleetId, id), listServiceRecords(db, fleetId, id), unitCostSummary(db, fleetId, id)]);
   const unit = toBoardEquipment(row);
   const schedules = scheduleRows.map(toBoardSchedule);
 
@@ -52,6 +54,8 @@ async function UnitDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <UnitActions unit={unit} schedules={schedules} size="md" />
       </header>
+
+      {costs && <UnitCosts type={unit.type} costs={costs} />}
 
       <section className="workboard-section" aria-labelledby="pm-title">
         <div className="section-heading">

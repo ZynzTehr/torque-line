@@ -6,13 +6,15 @@ import { findSimilarServiceRecord } from "@/domain/serviceRecords";
 import type { AppDb } from "./fleetStore";
 import { getEquipment } from "./equipmentStore";
 import { invalid, notFound, type Actor, type Failure } from "./result";
+import { advanceMeterFromEvidence, lockUnits, notTooFarAhead } from "./readingsStore";
+import { checkReading } from "@/domain/readings";
 
 export type ServiceRecordRow = typeof schema.serviceRecords.$inferSelect;
 
 const serviceInput = z.object({
   equipmentId: z.string(),
   scheduleId: z.string().optional(),
-  date: z.string().refine(validDate, "Enter a valid service date."),
+  date: z.string().refine(validDate, "Enter a valid service date.").refine(notTooFarAhead, "Service dates can't be in the future."),
   serviceType: z.string().trim().max(160).optional(),
   reading: z.number().int().nonnegative("Readings can't be negative.").optional(),
   cost: z.number().nonnegative("Cost can't be negative.").max(9_999_999_999.99).optional(),
@@ -66,36 +68,35 @@ export async function logService(db: AppDb, actor: Actor, input: ServiceInput): 
 
   const isReefer = unit.type === "reefer";
   const meterReading = unit.type === "trailer" ? undefined : d.reading;
+  if (meterReading != null) {
+    const check = checkReading(null, meterReading, isReefer ? "hours" : "odometer");
+    if (check.kind === "invalid") return invalid(check.message);
+  }
   return db.transaction(async (tx) => {
+    await lockUnits(tx, actor.fleetId, [unit.id]);
     const [record] = await tx.insert(schema.serviceRecords).values({
       fleetId: actor.fleetId, equipmentId: unit.id, date: d.date, serviceType,
       mileage: isReefer ? null : meterReading ?? null, hours: isReefer ? meterReading ?? null : null,
       cost: d.cost ?? null, shop: d.shop || null, notes: d.notes || null, createdBy: actor.userId,
     }).returning();
 
-    if (schedule) {
+    // Only a service at least as recent as the schedule's last one moves its baseline; backfills don't roll it back.
+    if (schedule && (!schedule.lastServiceDate || d.date >= schedule.lastServiceDate)) {
+      let baseline = meterReading;
+      if (baseline == null && !isReefer && schedule.mileageInterval != null) {
+        const [locked] = await tx.select({ m: schema.equipment.currentMileage }).from(schema.equipment)
+          .where(and(eq(schema.equipment.fleetId, actor.fleetId), eq(schema.equipment.id, unit.id)));
+        baseline = locked?.m ?? undefined; // completing a mileage item without a reading: use the unit's current mileage
+      }
       await tx.update(schema.maintenanceSchedules).set({
         lastServiceDate: d.date,
-        ...(meterReading != null && (isReefer ? { lastServiceHours: meterReading } : { lastServiceMileage: meterReading })),
+        ...(baseline != null && (isReefer ? { lastServiceHours: baseline } : { lastServiceMileage: baseline })),
         updatedAt: new Date(),
       }).where(and(eq(schema.maintenanceSchedules.fleetId, actor.fleetId), eq(schema.maintenanceSchedules.id, schedule.id)));
     }
 
     if (meterReading != null) {
-      const [locked] = await tx.select().from(schema.equipment)
-        .where(and(eq(schema.equipment.fleetId, actor.fleetId), eq(schema.equipment.id, unit.id))).for("update");
-      const current = isReefer ? locked.currentHours : locked.currentMileage;
-      if (current == null || meterReading >= current) {
-        const observedAt = new Date(`${d.date}T12:00:00Z`);
-        await tx.insert(schema.readings).values({
-          fleetId: actor.fleetId, equipmentId: unit.id, kind: isReefer ? "hours" : "odometer", value: meterReading,
-          observedAt, source: "service", createdBy: actor.userId,
-        });
-        await tx.update(schema.equipment).set(isReefer
-          ? { currentHours: meterReading, readingUpdatedAt: new Date(), updatedAt: new Date() }
-          : { currentMileage: meterReading, readingUpdatedAt: new Date(), updatedAt: new Date() })
-          .where(and(eq(schema.equipment.fleetId, actor.fleetId), eq(schema.equipment.id, unit.id)));
-      }
+      await advanceMeterFromEvidence(tx, actor, { equipmentId: unit.id, value: meterReading, date: d.date, source: "service" });
     }
     return { ok: true as const, record };
   });

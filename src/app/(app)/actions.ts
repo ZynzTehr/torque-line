@@ -3,20 +3,24 @@
 import { refresh } from "next/cache";
 import { getDb } from "@/db";
 import { requireFleet } from "@/server/fleet";
+import { guarded } from "@/server/guarded";
 import { archiveEquipment, createEquipment, updateEquipment, type EquipmentInput } from "@/server/equipmentStore";
 import { recordReading, type ReadingInput } from "@/server/readingsStore";
 import { addSchedule, applyDefaultSchedule, deleteSchedule, updateSchedule, type ScheduleInput } from "@/server/scheduleStore";
 import { logService, type ServiceInput } from "@/server/serviceStore";
+import { addFuelStop, deleteFuelStop, type FuelStopInput } from "@/server/fuelStore";
 
 /**
  * Server actions are public HTTP endpoints. Each one derives the fleet from the session through
  * requireFleet() and passes plain data to a tested store; nothing here trusts a client-sent fleet id.
  */
-async function withFleet<T>(run: (ctx: { fleetId: string; userId: string }) => Promise<T>): Promise<T> {
-  const { fleetId, user } = await requireFleet();
-  const result = await run({ fleetId, userId: user.id });
-  if ((result as { ok?: boolean })?.ok) refresh();
-  return result;
+async function withFleet<T>(run: (ctx: { fleetId: string; userId: string }) => Promise<T>) {
+  return guarded(run.name || "action", async () => {
+    const { fleetId, user } = await requireFleet();
+    const result = await run({ fleetId, userId: user.id });
+    if ((result as { ok?: boolean })?.ok) refresh();
+    return result;
+  });
 }
 
 export async function createEquipmentAction(input: EquipmentInput) {
@@ -70,4 +74,12 @@ export async function updateScheduleAction(id: string, input: Partial<ScheduleIn
 
 export async function deleteScheduleAction(id: string) {
   return withFleet(({ fleetId }) => deleteSchedule(getDb(), fleetId, id));
+}
+
+export async function addFuelStopAction(input: FuelStopInput) {
+  return withFleet((actor) => addFuelStop(getDb(), actor, input));
+}
+
+export async function deleteFuelStopAction(id: string) {
+  return withFleet(({ fleetId }) => deleteFuelStop(getDb(), fleetId, id));
 }

@@ -11,6 +11,7 @@ import { requireFleet } from "@/server/fleet";
 import { toBoardEquipment, toBoardSchedule } from "@/server/fleetView";
 import { listFleetSchedules } from "@/server/scheduleStore";
 import { fleetServiceSpend } from "@/server/serviceStore";
+import { fleetFuelSpend } from "@/server/fuelStore";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -32,8 +33,8 @@ export default function DashboardPage() {
 async function Workboard() {
   const { fleetId } = await requireFleet();
   const db = getDb();
-  const [equipmentRows, scheduleRows, spend] = await Promise.all([
-    listEquipment(db, fleetId), listFleetSchedules(db, fleetId), fleetServiceSpend(db, fleetId),
+  const [equipmentRows, scheduleRows, spend, fuelSpend] = await Promise.all([
+    listEquipment(db, fleetId), listFleetSchedules(db, fleetId), fleetServiceSpend(db, fleetId), fleetFuelSpend(db, fleetId),
   ]);
   const units = equipmentRows.map(toBoardEquipment);
   const schedules = scheduleRows.map(toBoardSchedule);
@@ -58,6 +59,8 @@ async function Workboard() {
         <div><dt>Overdue services</dt><dd className={board.counts.overdue ? "text-red" : ""}>{board.counts.overdue}</dd></div>
         <div><dt>Due soon</dt><dd className={board.counts.dueSoon ? "text-yellow" : ""}>{board.counts.dueSoon}</dd></div>
         <div><dt>Service spend</dt><dd>{spend > 0 ? formatCurrency(spend) : "$0"}</dd></div>
+        <div><dt>Fuel spend</dt><dd>{fuelSpend > 0 ? formatCurrency(fuelSpend) : "$0"}</dd></div>
+        <div><dt>Total spend</dt><dd>{spend + fuelSpend > 0 ? formatCurrency(spend + fuelSpend) : "$0"}</dd></div>
       </dl>
 
       <section className="workboard-section" aria-labelledby="attention-title">

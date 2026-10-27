@@ -39,3 +39,21 @@ describe("runDiagnosis", () => {
     expect(params.messages).toHaveLength(3);
   });
 });
+
+describe("buildRefineTurn", () => {
+  it("re-sends the opening context when the first model call never happened", async () => {
+    const { buildRefineTurn } = await import("@/ai/diagnose");
+    const img = imageBlock("image/jpeg", "AAAA");
+    const turn = buildRefineTurn({ priorTurns: 0, unit, symptom: "Loses power", images: [img], statuses: [], note: "Code P0087" });
+    expect(turn.send.map((b) => b.type)).toEqual(["image", "text", "text"]);
+    expect(JSON.stringify(turn.send)).toMatch(/Unit 101/);
+    expect(JSON.stringify(turn.send)).toMatch(/Loses power/);
+    expect(JSON.stringify(turn.send)).toMatch(/P0087/);
+  });
+  it("sends a short update when a conversation exists", async () => {
+    const { buildRefineTurn } = await import("@/ai/diagnose");
+    const turn = buildRefineTurn({ priorTurns: 2, unit, symptom: "x", images: [], statuses: [{ name: "Lift pump", status: "tried" }] });
+    expect(turn.send).toHaveLength(1);
+    expect(JSON.stringify(turn.send)).toMatch(/Lift pump/);
+  });
+});

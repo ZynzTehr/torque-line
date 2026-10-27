@@ -17,3 +17,9 @@ export async function requireFleet(): Promise<FleetContext> {
   if (!user) redirect(LOGIN_URL);
   return resolveFleetForUser(getDb(), user);
 }
+
+/** For route handlers: the signed-in user's fleet, or null (respond 401) instead of redirecting. */
+export async function fleetForRequest(): Promise<FleetContext | null> {
+  const user = await getSessionUser();
+  return user ? resolveFleetForUser(getDb(), user) : null;
+}
