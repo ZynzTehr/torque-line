@@ -1,13 +1,15 @@
 import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "@/db/schema";
+import { toAccountState, type AccountState } from "./accountStore";
 
 /** Any Drizzle Postgres database over this schema: Neon in the app, PGlite in tests. */
 export type AppDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 export interface FleetUser { id: string; email: string; name: string | null }
 export type FleetStatus = (typeof schema.fleetStatus.enumValues)[number];
-export interface FleetContext { user: FleetUser; fleetId: string; fleetName: string; status: FleetStatus }
+/** `account` is null while the account is open; otherwise the user closed it or scheduled its deletion. */
+export interface FleetContext { user: FleetUser; fleetId: string; fleetName: string; status: FleetStatus; account: AccountState | null }
 
 /** Refresh the owner's email and last-seen time, at most every 15 minutes per fleet. */
 async function touchFleet(db: AppDb, fleetId: string, email: string) {
@@ -25,14 +27,19 @@ async function touchFleet(db: AppDb, fleetId: string, email: string) {
  */
 export async function resolveFleetForUser(db: AppDb, user: FleetUser): Promise<FleetContext> {
   const existing = await db
-    .select({ fleetId: schema.fleets.id, fleetName: schema.fleets.name, status: schema.fleets.status })
+    .select({
+      fleetId: schema.fleets.id, fleetName: schema.fleets.name, status: schema.fleets.status,
+      accountState: schema.accountStates.state, purgeAfter: schema.accountStates.purgeAfter,
+    })
     .from(schema.memberships)
     .innerJoin(schema.fleets, eq(schema.fleets.id, schema.memberships.fleetId))
+    .leftJoin(schema.accountStates, eq(schema.accountStates.userId, schema.memberships.userId))
     .where(eq(schema.memberships.userId, user.id))
     .limit(1);
   if (existing[0]) {
-    await touchFleet(db, existing[0].fleetId, user.email);
-    return { user, ...existing[0] };
+    const { accountState, purgeAfter, ...fleet } = existing[0];
+    await touchFleet(db, fleet.fleetId, user.email);
+    return { user, ...fleet, account: toAccountState(accountState, purgeAfter) };
   }
 
   return db.transaction(async (tx) => {
@@ -43,12 +50,12 @@ export async function resolveFleetForUser(db: AppDb, user: FleetUser): Promise<F
       .returning({ id: schema.fleets.id, name: schema.fleets.name, status: schema.fleets.status });
     if (created) {
       await tx.insert(schema.memberships).values({ fleetId: created.id, userId: user.id, role: "owner" });
-      return { user, fleetId: created.id, fleetName: created.name, status: created.status };
+      return { user, fleetId: created.id, fleetName: created.name, status: created.status, account: null };
     }
     const [owned] = await tx
       .select({ id: schema.fleets.id, name: schema.fleets.name, status: schema.fleets.status })
       .from(schema.fleets)
       .where(eq(schema.fleets.ownerUserId, user.id));
-    return { user, fleetId: owned.id, fleetName: owned.name, status: owned.status };
+    return { user, fleetId: owned.id, fleetName: owned.name, status: owned.status, account: null };
   });
 }

@@ -1,5 +1,6 @@
 import { and, eq, gte, sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
+import { toAccountState, type AccountState } from "./accountStore";
 import type { AppDb, FleetStatus } from "./fleetStore";
 import { forbidden, invalid, notFound, type Failure } from "./result";
 
@@ -23,6 +24,8 @@ export interface AdminFleetRow {
   statusChangedAt: Date | null;
   unitCount: number;
   aiRequests30d: number;
+  /** The owner closed the account or scheduled its deletion; null while it is open. */
+  account: AccountState | null;
 }
 
 /** Every fleet, newest first, with the numbers an operator needs to judge an account. Callers must check isPlatformAdmin. */
@@ -32,14 +35,18 @@ export async function listFleetsForAdmin(db: AppDb): Promise<AdminFleetRow[]> {
   const ai = db.select({ fleetId: schema.aiUsage.fleetId, n: sql<number>`sum(${schema.aiUsage.requests})::int`.as("ai_count") })
     .from(schema.aiUsage).where(gte(schema.aiUsage.day, sql`current_date - 30`)).groupBy(schema.aiUsage.fleetId).as("ai");
   const f = schema.fleets;
-  return db.select({
+  const a = schema.accountStates;
+  const rows = await db.select({
     fleetId: f.id, fleetName: f.name, ownerUserId: f.ownerUserId, ownerEmail: f.ownerEmail, createdAt: f.createdAt,
     lastSeenAt: f.lastSeenAt, seenLast7d: sql<boolean>`coalesce(${f.lastSeenAt} > now() - interval '7 days', false)`, status: f.status, statusNote: f.statusNote, statusChangedAt: f.statusChangedAt,
     unitCount: sql<number>`coalesce(${units.n}, 0)`, aiRequests30d: sql<number>`coalesce(${ai.n}, 0)`,
+    accountState: a.state, purgeAfter: a.purgeAfter,
   }).from(f)
     .leftJoin(units, eq(units.fleetId, f.id))
     .leftJoin(ai, eq(ai.fleetId, f.id))
+    .leftJoin(a, eq(a.userId, f.ownerUserId))
     .orderBy(sql`${f.createdAt} desc`);
+  return rows.map(({ accountState, purgeAfter, ...row }) => ({ ...row, account: toAccountState(accountState, purgeAfter) }));
 }
 
 export async function setFleetStatus(
