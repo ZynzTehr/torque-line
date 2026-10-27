@@ -76,13 +76,16 @@ export interface PlatformAdminRow {
   email: string | null;
   role: PlatformRole;
   createdAt: Date;
+  /** The admin closed their account or scheduled its deletion; a closed super admin doesn't count as one. */
+  closed: boolean;
 }
 
 /** Every platform admin, oldest first. Callers must check can(…, "manageAdmins"). */
 export async function listPlatformAdmins(db: AppDb): Promise<PlatformAdminRow[]> {
   const rows = await db.execute(sql`
-    select a.user_id as "userId", u.email, a.role, a.created_at as "createdAt"
+    select a.user_id as "userId", u.email, a.role, a.created_at as "createdAt", s.state is not null as closed
     from platform_admins a left join neon_auth."user" u on u.id::text = a.user_id
+      left join account_states s on s.user_id = a.user_id
     order by a.created_at, u.email`);
   return (rows as unknown as { rows: PlatformAdminRow[] }).rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt) }));
 }
@@ -104,16 +107,27 @@ async function managingAdmins(
 const LAST_SUPER = invalid("There must always be at least one super admin.");
 const CHOOSE_ROLE = invalid("Choose super or support.");
 
-/** Makes an existing Neon Auth user an admin, found by the email they sign in with. */
+/**
+ * Makes an existing Neon Auth user an admin, found by the email they sign in with. Sign-up doesn't prove the address
+ * (verification is optional), so only a verified email counts: otherwise whoever registered the address first would
+ * get the role. A closed account is refused too, since it can't use the role or count as a super admin.
+ * The user, their verification and their account state come from one statement, so an account purged mid-add is
+ * either seen whole (and refused) or not at all; no admin row is left pointing at a deleted user.
+ */
 export async function addPlatformAdmin(
   db: AppDb, actorUserId: string, input: { email: string; role: PlatformRole },
 ): Promise<{ ok: true } | Failure> {
   return managingAdmins(db, actorUserId, async (tx) => {
     if (!isPlatformRole(input.role)) return CHOOSE_ROLE;
     const email = input.email.trim().toLowerCase();
-    const found = await tx.execute(sql`select id::text as id from neon_auth."user" where lower(email) = ${email} limit 1`);
-    const [user] = (found as unknown as { rows: { id: string }[] }).rows;
+    const found = await tx.execute(sql`
+      select u.id::text as id, u."emailVerified" as verified, s.state is not null as closed
+      from neon_auth."user" u left join account_states s on s.user_id = u.id::text
+      where lower(u.email) = ${email} limit 1`);
+    const [user] = (found as unknown as { rows: { id: string; verified: boolean; closed: boolean }[] }).rows;
     if (!user) return invalid("No Torqueline account uses that email. They need to sign up first.");
+    if (!user.verified) return invalid("That account hasn't verified its email yet. Only verified accounts can be admins.");
+    if (user.closed) return invalid("That account is closed. They need to reopen it first.");
     const added = await tx.insert(schema.platformAdmins).values({ userId: user.id, role: input.role })
       .onConflictDoNothing({ target: schema.platformAdmins.userId }).returning({ userId: schema.platformAdmins.userId });
     return added.length ? { ok: true } : invalid(`${email} is already an admin.`);

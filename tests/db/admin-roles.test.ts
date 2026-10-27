@@ -23,7 +23,7 @@ const olga = person(4, "Olga"); // owner, not an admin
 beforeAll(async () => {
   ({ db, close } = await createTestDb());
   await db.execute(sql`create schema neon_auth`);
-  await db.execute(sql`create table neon_auth."user" (id uuid primary key, email text not null, name text)`);
+  await db.execute(sql`create table neon_auth."user" (id uuid primary key, email text not null, name text, "emailVerified" boolean not null default true)`);
   for (const p of [sue, pat, sam, olga]) {
     await db.execute(sql`insert into neon_auth."user" (id, email, name) values (${p.id}::uuid, ${p.email}, ${p.name})`);
     await resolveFleetForUser(db, p);
@@ -32,6 +32,7 @@ beforeAll(async () => {
 afterAll(() => close());
 
 beforeEach(async () => {
+  await db.execute(sql`update neon_auth."user" set "emailVerified" = true`);
   await db.delete(schema.accountStates);
   await db.delete(schema.platformAdmins);
   await db.insert(schema.platformAdmins).values([{ userId: sue.id, role: "super" }, { userId: pat.id, role: "super" }, { userId: sam.id, role: "support" }]);
@@ -55,6 +56,12 @@ describe("platform roles", () => {
     ]);
   });
 
+  it("marks an admin whose account is closed, who doesn't count as a super admin", async () => {
+    await closeAccount(db, pat.id);
+    expect(Object.fromEntries((await listPlatformAdmins(db)).map((a) => [a.email, a.closed])))
+      .toEqual({ "sue@example.com": false, "pat@example.com": true, "sam@example.com": false });
+  });
+
   it("support pauses and reactivates accounts, as admins always could", async () => {
     const olgaFleet = await resolveFleetForUser(db, olga);
     expect(await setFleetStatus(db, sam.id, { fleetId: olgaFleet.fleetId, status: "inactive" })).toEqual({ ok: true });
@@ -76,6 +83,22 @@ describe("a super admin manages admins", () => {
       .toEqual({ ok: false, code: "invalid", message: "sam@example.com is already an admin." });
     expect(await addPlatformAdmin(db, sue.id, { email: "olga@example.com", role: "owner" as never }))
       .toMatchObject({ ok: false, code: "invalid" });
+    expect(await platformRoleOf(db, olga.id)).toBeNull();
+  });
+
+  it("refuses an account whose email isn't verified, since anyone could have signed up with that address", async () => {
+    await db.execute(sql`update neon_auth."user" set "emailVerified" = false where id = ${olga.id}::uuid`);
+    expect(await addPlatformAdmin(db, sue.id, { email: "olga@example.com", role: "support" }))
+      .toEqual({ ok: false, code: "invalid", message: "That account hasn't verified its email yet. Only verified accounts can be admins." });
+    expect(await platformRoleOf(db, olga.id)).toBeNull();
+  });
+
+  it("refuses a closed account and one scheduled for deletion", async () => {
+    const refusal = { ok: false, code: "invalid", message: "That account is closed. They need to reopen it first." };
+    await closeAccount(db, olga.id);
+    expect(await addPlatformAdmin(db, sue.id, { email: "olga@example.com", role: "super" })).toEqual(refusal);
+    await scheduleAccountDeletion(db, olga.id);
+    expect(await addPlatformAdmin(db, sue.id, { email: "olga@example.com", role: "super" })).toEqual(refusal);
     expect(await platformRoleOf(db, olga.id)).toBeNull();
   });
 
@@ -115,7 +138,9 @@ describe("there is always a super admin", () => {
     expect(await platformRoleOf(db, pat.id)).toBe("super");
   });
 
-  it("lets only one of two super admins demote the other when both try at once", async () => {
+  // PGlite has one connection, so these run one after the other: this checks that the second re-reads its own role.
+  // The row lock that makes the same true on real Postgres is tested in tests/live/admin-roles.live.test.ts.
+  it("when two super admins demote each other, the second finds it is no longer a super admin", async () => {
     const results = await Promise.all([
       setPlatformAdminRole(db, sue.id, { userId: pat.id, role: "support" }),
       setPlatformAdminRole(db, pat.id, { userId: sue.id, role: "support" }),

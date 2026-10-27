@@ -5,7 +5,7 @@ import { addAdminAction, removeAdminAction, setAdminRoleAction } from "@/app/(ap
 import { Sheet } from "@/components/ui/Sheet";
 import { isPlatformRole, type PlatformRole } from "@/domain/adminPermissions";
 
-export interface AdminView { userId: string; email: string | null; role: PlatformRole }
+export interface AdminView { userId: string; email: string | null; role: PlatformRole; closed: boolean }
 
 const ROLE_LABEL: Record<PlatformRole, string> = { super: "Super", support: "Support" };
 
@@ -46,6 +46,7 @@ function AdminRow({ admin, isSelf }: { admin: AdminView; isSelf: boolean }) {
         <div className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-2">
           <span className="font-semibold break-all">{email}</span>
           {isSelf && <><span className="badge badge-blue">{ROLE_LABEL[admin.role]}</span><span className="badge badge-neutral">You</span></>}
+          {admin.closed && <span className="badge badge-yellow">Account closed</span>}
         </div>
         {!isSelf && (
           <div className="flex items-center gap-2">
@@ -95,7 +96,7 @@ function AddAdmin() {
   return (
     <form onSubmit={submit} className="card mt-3 !p-3" aria-labelledby="add-admin-title">
       <h4 id="add-admin-title" className="mb-1 font-semibold">Add an admin</h4>
-      <p className="text-secondary mb-3 text-xs">They need a Torqueline account first. Support can see and pause accounts; super can also manage admins.</p>
+      <p className="text-secondary mb-3 text-xs">They need a Torqueline account with a verified email. Support can see and pause accounts; super can also manage admins.</p>
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1 basis-56">
           <label className="form-label" htmlFor="add-admin-email">Email</label>

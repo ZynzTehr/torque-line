@@ -10,6 +10,17 @@ const admin = { name: "Ada Admin", email: `e2e+admin${stamp}@example.com`, passw
 const member = { name: "Mo Member", email: `e2e+member${stamp}@example.com`, password: `Torque-${stamp}?` };
 const shared: { admin?: string; member?: string } = {};
 
+/** Runs one statement on the test branch (DATABASE_URL is the e2e branch; see live.spec.ts). */
+async function query(text: string, values: unknown[]) {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try { await pool.query(text, values); } finally { await pool.end(); }
+}
+
+// Whatever happened, neither user of this run stays an admin on the shared test branch.
+test.afterAll(async () => {
+  await query(`delete from platform_admins where user_id in (select id::text from neon_auth."user" where email in ($1, $2))`, [admin.email, member.email]);
+});
+
 async function signUp(page: Page, who: typeof admin) {
   await page.goto("/auth/sign-up");
   await page.getByLabel("Your name").fill(who.name);
@@ -26,9 +37,7 @@ test("two owners sign up; one is made a platform admin by hand", async ({ browse
     shared[key] = JSON.stringify(await context.storageState());
     await context.close();
   }
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  await pool.query(`insert into platform_admins (user_id) select id::text from neon_auth."user" where email = $1`, [admin.email]);
-  await pool.end();
+  await query(`insert into platform_admins (user_id) select id::text from neon_auth."user" where email = $1`, [admin.email]);
 });
 
 test("a regular owner gets a 404 for the admin area and sees no admin link", async ({ browser }) => {
@@ -88,8 +97,12 @@ test("a super admin adds a support admin, who sees accounts but can't manage adm
   await adminPage.getByRole("button", { name: "Add admin" }).click();
   await expect(adminPage.getByRole("alert").filter({ hasText: "No Torqueline account uses that email. They need to sign up first." })).toBeVisible();
 
+  // Sign-up doesn't prove the address, so an unverified account can't be made an admin.
   await adminPage.getByLabel("Email").fill(member.email.toUpperCase());
   await expect(adminPage.getByLabel("Role", { exact: true })).toHaveValue("support");
+  await adminPage.getByRole("button", { name: "Add admin" }).click();
+  await expect(adminPage.getByRole("alert").filter({ hasText: "That account hasn't verified its email yet. Only verified accounts can be admins." })).toBeVisible();
+  await query(`update neon_auth."user" set "emailVerified" = true where email = $1`, [member.email]);
   await adminPage.getByRole("button", { name: "Add admin" }).click();
   const memberRow = admins.getByTestId("platform-admin").filter({ hasText: member.email });
   await expect(memberRow.getByLabel(`Role for ${member.email}`)).toHaveValue("support");
