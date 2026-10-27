@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { addFuelStopAction, attachReceiptAction, removeAttachmentAction, updateFuelStopAction } from "@/app/(app)/actions";
 import { readFuelReceiptAction } from "@/app/(app)/ai-actions";
@@ -60,7 +61,9 @@ export function AddFuelStopSheet({ open, onClose, tractors, reefers, existing }:
     }
     return { ...all, [p]: next };
   });
-  const products = (Object.keys(LABEL) as Product[]).filter((p) => (p === "reefer" ? reefers.length : tractors.length));
+  // Every product row shows; a row whose unit kind the fleet doesn't have explains how to enable it.
+  const hasUnit = (p: Product) => (p === "reefer" ? reefers.length : tractors.length) > 0;
+  const products = (Object.keys(LABEL) as Product[]).filter(hasUnit);
   const total = useMemo(() => products.reduce((sum, p) => sum + Math.round((Number(lines[p].subtotal) || 0) * 100), 0) / 100, [lines, products]);
 
   async function submit(e: FormEvent) {
@@ -143,15 +146,22 @@ export function AddFuelStopSheet({ open, onClose, tractors, reefers, existing }:
           {reefers.length > 0 && <div className="form-group"><label className="form-label" htmlFor="fuel-reefer">Reefer</label>
             <select id="fuel-reefer" className="form-select" value={reefer} onChange={(e) => setReefer(e.target.value)}>{reefers.map((t) => <option key={t.id} value={t.id}>{t.unitNumber}</option>)}</select></div>}
         </div>
-        {products.map((p) => (
+        {(Object.keys(LABEL) as Product[]).map((p) => (
           <fieldset key={p} className="card !p-3">
             <legend className="px-1 text-sm font-semibold">{LABEL[p]}</legend>
+            {!hasUnit(p) ? (
+              <p className="text-secondary text-sm">
+                {p === "reefer" ? "To log reefer fuel, add your reefer as a unit with type Reefer." : `To log ${LABEL[p]}, add a tractor.`}{" "}
+                <Link href="/equipment" className="text-accent" onClick={onClose}>Go to equipment</Link>
+              </p>
+            ) : (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <input aria-label={`${LABEL[p]} gallons`} className="form-input font-mono" inputMode="decimal" placeholder="Gallons" value={lines[p].gallons} onChange={(e) => update(p, "gallons", e.target.value)} />
               <input aria-label={`${LABEL[p]} price per gallon`} className="form-input font-mono" inputMode="decimal" placeholder="$/gal" value={lines[p].price} onChange={(e) => update(p, "price", e.target.value)} />
               <input aria-label={`${LABEL[p]} subtotal`} className="form-input font-mono" inputMode="decimal" placeholder="Subtotal $" value={lines[p].subtotal} onChange={(e) => update(p, "subtotal", e.target.value)} />
               {p !== "def" && <input aria-label={p === "reefer" ? "Reefer hours" : "Odometer"} className="form-input font-mono" inputMode="numeric" placeholder={p === "reefer" ? "Hours" : "Odometer"} value={lines[p].reading} onChange={(e) => update(p, "reading", e.target.value.replace(/\D/g, ""))} />}
             </div>
+            )}
           </fieldset>
         ))}
         <div className="form-group">

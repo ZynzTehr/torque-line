@@ -72,7 +72,7 @@ export function AddEquipmentSheet({ open, onClose, existing }: { open: boolean; 
               onChange={(e) => setType(e.target.value as typeof type)}>
               <option value="tractor">Tractor</option>
               <option value="trailer">Trailer</option>
-              <option value="reefer">Reefer unit</option>
+              <option value="reefer">Reefer (refrigerated trailer)</option>
             </select>
           </div>
           <div className="form-group">
