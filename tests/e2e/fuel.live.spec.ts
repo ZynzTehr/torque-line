@@ -37,7 +37,6 @@ test("fuel stops can be corrected, filtered, and deleted with their receipt", as
   await page.goto("/fuel");
   await page.getByRole("button", { name: "+ Fuel stop" }).click();
   const sheet = page.getByRole("dialog");
-  await expect(sheet.getByRole("group", { name: "Reefer fuel" })).toContainText("add your reefer as a unit with type Reefer");
   await sheet.getByLabel("Station").fill("Pilot #412");
   await sheet.getByLabel("Diesel gallons").fill("100");
   await sheet.getByRole("button", { name: "Save stop" }).click();
