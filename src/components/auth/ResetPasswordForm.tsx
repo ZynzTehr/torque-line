@@ -4,11 +4,14 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PasswordInput } from "./PasswordInput";
-import { authClient } from "@/lib/auth/client";
-import { checkNewPassword, isInvalidResetLink, orThrow, passwordFailureMessage } from "@/lib/auth/errors";
+import { resetPasswordAction } from "@/app/auth/actions";
+import { checkNewPassword, NETWORK_MESSAGE } from "@/lib/auth/errors";
 import { FORGOT_PASSWORD_URL, LOGIN_URL } from "@/lib/auth/routes";
 
-/** Sets a new password with the token from the emailed link. `token` is null when the link was already rejected. */
+/**
+ * Sets a new password with the token from the emailed link, which also signs the account out on every device.
+ * `token` is null when the link was already rejected.
+ */
 export function ResetPasswordForm({ token }: { token: string | null }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -24,12 +27,13 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     setPending(true);
     setError(null);
     try {
-      orThrow(await authClient.resetPassword({ newPassword: password, token: token! }));
-      router.push(`${LOGIN_URL}?notice=password-reset`);
+      const result = await resetPasswordAction(token!, password);
+      if (result.ok) return router.push(`${LOGIN_URL}?notice=password-reset`);
+      if (result.code === "invalid-link") return setLinkInvalid(true);
+      setError(result.message);
     } catch (caught) {
-      if (isInvalidResetLink(caught)) return setLinkInvalid(true);
       console.error("Password reset failed", caught);
-      setError(passwordFailureMessage(caught));
+      setError(NETWORK_MESSAGE);
     } finally {
       setPending(false);
     }

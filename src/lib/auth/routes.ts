@@ -12,7 +12,7 @@ export function verifyEmailHref(email: string): string {
 
 /** One-line notices the sign-in page shows after another auth page sends the user there (?notice=…). */
 export const SIGN_IN_NOTICES = {
-  "password-reset": "Password updated. Sign in with your new password.",
+  "password-reset": "Password updated and all devices signed out. Sign in with your new password.",
   verified: "Email verified. Sign in to continue.",
 } as const;
 export type SignInNotice = keyof typeof SIGN_IN_NOTICES;
