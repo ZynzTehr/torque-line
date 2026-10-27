@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
-import { authFailureMessage } from "@/lib/auth/errors";
+import { authFailureMessage, needsEmailVerification } from "@/lib/auth/errors";
+import { FORGOT_PASSWORD_URL, verifyEmailHref } from "@/lib/auth/routes";
 import { BRAND } from "@/lib/brand";
 
 type Mode = "sign-in" | "sign-up";
 
-export function AuthForm({ mode }: { mode: Mode }) {
+/** `notice` is a one-line status the sign-in page passes in (password reset, email verified). */
+export function AuthForm({ mode, notice }: { mode: Mode; notice?: ReactNode }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -30,9 +32,18 @@ export function AuthForm({ mode }: { mode: Mode }) {
         setError(result.error.message ?? "That didn't work. Check your details and try again.");
         return;
       }
+      // With required verification on, sign-up creates the user but no session: go enter the emailed code.
+      if (mode === "sign-up" && !result.data?.token) {
+        router.push(verifyEmailHref(email));
+        return;
+      }
       router.push("/dashboard");
       router.refresh();
     } catch (caught) {
+      if (needsEmailVerification(caught)) {
+        router.push(verifyEmailHref(email));
+        return;
+      }
       console.error("Auth request failed", caught);
       setError(authFailureMessage(caught));
     } finally {
@@ -48,6 +59,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
         <p className="text-secondary mb-6 text-sm">
           {isSignUp ? "One account per fleet owner. You can add trucks right after." : "Welcome back."}
         </p>
+        {notice}
         {isSignUp && (
           <div className="form-group">
             <label className="form-label" htmlFor="name">Your name</label>
@@ -59,7 +71,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
           <input className="form-input" id="email" name="email" type="email" autoComplete="email" required />
         </div>
         <div className="form-group">
-          <label className="form-label" htmlFor="password">Password</label>
+          <div className="flex items-baseline justify-between">
+            <label className="form-label" htmlFor="password">Password</label>
+            {!isSignUp && <Link className="text-accent text-sm" href={FORGOT_PASSWORD_URL}>Forgot password?</Link>}
+          </div>
           <input className="form-input" id="password" name="password" type="password" minLength={8} required
             autoComplete={isSignUp ? "new-password" : "current-password"} />
         </div>
