@@ -46,12 +46,15 @@ describe("askStructured", () => {
 
 describe("askStructured on Haiku with an Opus retry", () => {
   /** Answers each call with the next response in order, echoing the requested model like the API does. */
-  function sequence(...responses: unknown[]): AiTransport & { calls: Record<string, unknown>[] } {
+  function sequence(...responses: unknown[]): AiTransport & { calls: Record<string, unknown>[]; limits: unknown[] } {
     const calls: Record<string, unknown>[] = [];
+    const limits: unknown[] = [];
     return {
       calls,
-      parse: vi.fn(async (params) => {
+      limits,
+      parse: vi.fn(async (params, requestLimits) => {
         calls.push(params);
+        limits.push(requestLimits);
         const next = responses[calls.length - 1];
         if (next instanceof Error) throw next;
         return { stop_reason: "end_turn", parsed_output: null, model: params.model as string, ...(next as object) };
@@ -91,6 +94,18 @@ describe("askStructured on Haiku with an Opus retry", () => {
     const t = sequence({ stop_reason: "refusal" }, { parsed_output: null });
     expect(await ask(t)).toEqual({ ok: false, code: "unreadable" });
     expect(t.calls).toHaveLength(2);
+  });
+
+  it("caps Haiku at 30s with one SDK retry and the Opus retry at one SDK retry, so both fit in a 300s function", async () => {
+    const t = sequence(new Error("ETIMEDOUT"), { parsed_output: { value: 1 } });
+    await ask(t);
+    expect(t.limits).toEqual([{ timeout: 30_000, maxRetries: 1 }, { maxRetries: 1 }]);
+  });
+
+  it("leaves a direct Opus request on the client's default timeout and retries", async () => {
+    const t = sequence({ parsed_output: { value: 1 } });
+    await askStructured(t, { schema, system: "s", content: [], effort: "high" });
+    expect(t.limits).toEqual([undefined]);
   });
 
   it("does not retry a failed Opus request", async () => {
