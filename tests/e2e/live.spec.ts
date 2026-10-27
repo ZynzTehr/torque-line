@@ -139,6 +139,20 @@ test("another fleet cannot see the first fleet's unit or files", async ({ browse
   await anonymous.close();
 });
 
+test("the gear style picked in Settings applies at once and survives a reload", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: JSON.parse(shared.storage!) });
+  const page = await context.newPage();
+  await page.goto("/settings");
+  const html = page.locator("html");
+  await expect(html).not.toHaveAttribute("data-gear-style", "amber");
+  await page.getByRole("radio", { name: "Amber" }).click();
+  await expect(html).toHaveAttribute("data-gear-style", "amber");
+  await page.reload();
+  await expect(html).toHaveAttribute("data-gear-style", "amber");
+  await expect(page.getByRole("radio", { name: "Amber" })).toHaveAttribute("aria-checked", "true");
+  await context.close();
+});
+
 test("the owner can sign out, and the dashboard then asks them to sign in", async ({ browser }) => {
   const context = await browser.newContext({ storageState: JSON.parse(shared.storage!) });
   const page = await context.newPage();

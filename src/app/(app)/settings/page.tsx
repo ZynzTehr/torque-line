@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
+import { GearStyleSwitcher } from "@/components/shell/GearStyleSwitcher";
 import { SignOutButton } from "@/components/shell/SignOutButton";
 import { getSessionUser, LOGIN_URL } from "@/lib/auth/server";
 
@@ -18,6 +19,11 @@ export default function Page() {
             <SignedInAs />
           </Suspense>
           <SignOutButton className="btn btn-secondary" />
+        </section>
+        <section className="card mt-4 max-w-md" aria-labelledby="appearance-heading">
+          <h3 id="appearance-heading" className="mb-2">Gear style</h3>
+          <p className="text-secondary mb-3 text-sm">The finish of the gears behind every page. Light and dark themes are in the sidebar.</p>
+          <GearStyleSwitcher />
         </section>
       </div>
     </>
