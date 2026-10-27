@@ -178,6 +178,14 @@ test("after 30 days the purge erases the account: sign-in fails and the receipt 
   expect((await page.request.get(receiptUrl)).status()).toBe(200);
 
   await deleteAccount(page, who);
+  // A reset link asked for during the 30 days and never used: Neon Auth keeps its token with the user id in the clear.
+  await page.goto("/auth/forgot-password");
+  await page.getByLabel("Email").fill(who.email);
+  await page.getByRole("button", { name: "Send reset link" }).click();
+  await expect(page.getByRole("status")).toBeVisible();
+  const tokensOf = async () => (await db.query(
+    `select 1 from neon_auth.verification where value = $1 or strpos(lower(identifier), $2) > 0`, [userId, who.email.toLowerCase()])).rowCount;
+  await expect.poll(tokensOf).toBeGreaterThanOrEqual(1);
   await db.query(`update account_states set purge_after = now() - interval '1 minute' where user_id = $1`, [userId]);
 
   const anonymous = await browser.newContext();
@@ -190,6 +198,7 @@ test("after 30 days the purge erases the account: sign-in fails and the receipt 
   expect((await anonymous.request.get("/api/cron/purge-accounts", { headers: { authorization: `Bearer ${secret}` } })).status()).toBe(200);
 
   expect(await userIdOf(who.email)).toBeUndefined();
+  expect(await tokensOf()).toBe(0);
   expect((await db.query(`select 1 from fleets where id = $1`, [att.fleet_id])).rowCount).toBe(0);
   expect((await db.query(`select 1 from attachments where id = $1`, [att.id])).rowCount).toBe(0);
   expect((await db.query(`select 1 from anon_service_events where service_type = 'oil and filter change' and cost = 250`)).rowCount).toBeGreaterThanOrEqual(1);

@@ -75,15 +75,19 @@ async function purgeAccount(tx: Tx, userId: string): Promise<{ fleetIds: string[
   const viaOwner = await tx.select({ fleetId: schema.fleets.id }).from(schema.fleets).where(eq(schema.fleets.ownerUserId, userId));
   const purged: string[] = [];
   for (const fleetId of new Set([...viaMembership, ...viaOwner].map((r) => r.fleetId))) {
-    const [next] = await tx.select({ userId: m.userId }).from(m)
-      .where(and(eq(m.fleetId, fleetId), ne(m.userId, userId), eq(m.role, "owner"))).orderBy(asc(m.createdAt)).limit(1);
-    if (!next) {
+    const owned = tx.select({ one: sql`1` }).from(schema.fleets).where(eq(schema.fleets.ownerUserId, m.userId));
+    const others = await tx.select({ userId: m.userId, ownsFleet: sql<boolean>`exists (${owned})` }).from(m)
+      .where(and(eq(m.fleetId, fleetId), ne(m.userId, userId), eq(m.role, "owner"))).orderBy(asc(m.createdAt));
+    if (!others.length) {
       await copyStatistics(tx, fleetId);
       purged.push(fleetId);
       continue;
     }
-    // Shared fleet: it stays with the next owner. owner_email refreshes on their next visit.
-    await tx.update(schema.fleets).set({ ownerUserId: next.userId, ownerEmail: null })
+    // Shared fleet: it stays with the other owners. owner_user_id is unique (it is how a first sign-in finds the
+    // fleet it created), so it passes to an owner with no fleet of their own, or else to a placeholder no user id
+    // can match. owner_email refreshes on the next member's visit.
+    const heir = others.find((o) => !o.ownsFleet)?.userId ?? `${DELETED_USER}:${fleetId}`;
+    await tx.update(schema.fleets).set({ ownerUserId: heir, ownerEmail: null })
       .where(and(eq(schema.fleets.id, fleetId), eq(schema.fleets.ownerUserId, userId)));
   }
   if (purged.length) await tx.delete(schema.fleets).where(inArray(schema.fleets.id, purged));
@@ -95,9 +99,26 @@ async function purgeAccount(tx: Tx, userId: string): Promise<{ fleetIds: string[
   await tx.delete(m).where(eq(m.userId, userId));
   await tx.delete(schema.platformAdmins).where(eq(schema.platformAdmins.userId, userId));
   await tx.delete(s).where(eq(s.userId, userId));
-  // Neon Auth has no self-service delete endpoint; its session, account and member rows cascade from the user.
-  await tx.execute(sql`delete from neon_auth."user" where id = ${userId}::uuid`);
+  await deleteAuthUser(tx, userId);
   return { fleetIds: purged };
+}
+
+/**
+ * Neon Auth has no self-service delete endpoint, so the user row goes directly; their session, account and member
+ * rows cascade from it. Rows that only name the user don't cascade and Better Auth drops them only when used:
+ * pending one-time tokens (a reset token's value is the user id; email codes are keyed by the address, alone or
+ * after "<type>-otp-"), invitations sent to the address, and sessions they started as an impersonating admin.
+ * Matching the address inside a token row is a substring match: another address ending in this one would lose a
+ * pending code, which asking for a new one fixes.
+ */
+async function deleteAuthUser(tx: Tx, userId: string) {
+  const [user] = (await tx.execute(sql`delete from neon_auth."user" where id = ${userId}::uuid returning email`) as unknown as { rows: { email: string }[] }).rows;
+  await tx.execute(sql`delete from neon_auth.session where "impersonatedBy" = ${userId}`);
+  await tx.execute(sql`delete from neon_auth.verification where strpos(value, ${userId}) > 0`);
+  if (!user?.email) return;
+  const email = user.email.toLowerCase();
+  await tx.execute(sql`delete from neon_auth.verification where strpos(lower(identifier), ${email}) > 0 or strpos(lower(value), ${email}) > 0`);
+  await tx.execute(sql`delete from neon_auth.invitation where lower(email) = ${email}`);
 }
 
 async function insertAll<T extends PgTable>(tx: Tx, table: T, rows: T["$inferInsert"][]) {
