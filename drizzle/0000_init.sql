@@ -83,10 +83,12 @@ CREATE TABLE "equipment" (
 --> statement-breakpoint
 CREATE TABLE "fleets" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"owner_user_id" text NOT NULL,
 	"name" text NOT NULL,
 	"timezone" text DEFAULT 'America/Chicago' NOT NULL,
 	"ai_daily_limit" integer DEFAULT 100 NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "fleets_owner_user" UNIQUE("owner_user_id")
 );
 --> statement-breakpoint
 CREATE TABLE "fuel_lines" (
