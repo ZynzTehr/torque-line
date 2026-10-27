@@ -5,7 +5,7 @@ import { Pool } from "@neondatabase/serverless";
 test.skip(!process.env.LIVE, "set LIVE=1 to run against a real Neon branch");
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
-const stamp = `${Date.now()}`;
+const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`; // desktop and phone run at once: the same millisecond must not mean the same email
 const admin = { name: "Ada Admin", email: `e2e+admin${stamp}@example.com`, password: `Torque-${stamp}!` };
 const member = { name: "Mo Member", email: `e2e+member${stamp}@example.com`, password: `Torque-${stamp}?` };
 const shared: { admin?: string; member?: string } = {};
