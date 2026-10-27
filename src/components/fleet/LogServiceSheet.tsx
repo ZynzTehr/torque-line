@@ -3,7 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { attachReceiptAction, logServiceAction, removeAttachmentAction, updateServiceRecordAction } from "@/app/(app)/actions";
 import { readServiceReceiptAction } from "@/app/(app)/ai-actions";
-import { PhotoButton } from "./PhotoButton";
+import { PhotoButton, ReceiptPreview, useHeldPhoto } from "./PhotoButton";
 import { Sheet } from "@/components/ui/Sheet";
 import { formatCurrency, formatDate, formatMileage } from "@/domain/format";
 import type { BoardEquipment, BoardSchedule } from "@/domain/workboard";
@@ -28,8 +28,7 @@ export function LogServiceSheet({ unit, schedules, scheduleId, record, open, onC
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const { file: receipt, preview, hold: holdReceipt } = useHeldPhoto();
   const [dropExisting, setDropExisting] = useState(false);
   const [savedWithoutReceipt, setSavedWithoutReceipt] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -37,12 +36,6 @@ export function LogServiceSheet({ unit, schedules, scheduleId, record, open, onC
   const existingReceipt = record?.receiptId && !dropExisting && !receipt ? record.receiptId : null;
   const meter = unit.type === "trailer" ? null : unit.type === "reefer" ? "Engine hours" : "Odometer";
   const recordReading = unit.type === "reefer" ? record?.hours : record?.mileage;
-
-  const holdReceipt = (file: File | null) => {
-    if (preview) URL.revokeObjectURL(preview);
-    setReceipt(file);
-    setPreview(file ? URL.createObjectURL(file) : null);
-  };
 
   const close = () => {
     setDuplicate(null); setError(null); setAiNote(null); holdReceipt(null);
@@ -120,16 +113,7 @@ export function LogServiceSheet({ unit, schedules, scheduleId, record, open, onC
           <PhotoButton label="Attach photo only" busyLabel="Preparing photo…" onPhoto={async (photo) => holdReceipt(photo)} />
         </div>
         {aiNote && <p className="text-secondary text-sm" role="status">{aiNote}</p>}
-        {(preview || existingReceipt) && (
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL or an authenticated attachment, not an optimizable asset */}
-            <img src={preview ?? `/api/attachments/${existingReceipt}`} alt="Receipt photo" className="h-16 w-16 rounded border border-line object-cover" />
-            <span className="text-secondary text-sm">{preview ? "Saved with the record" : "Receipt on file"}</span>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => (receipt ? holdReceipt(null) : setDropExisting(true))}>
-              Remove
-            </button>
-          </div>
-        )}
+        <ReceiptPreview preview={preview} savedId={existingReceipt} onRemove={() => (receipt ? holdReceipt(null) : setDropExisting(true))} />
         <div className="form-group">
           <label className="form-label" htmlFor="svc-schedule">Schedule item</label>
           <select id="svc-schedule" name="scheduleId" className="form-select" defaultValue={record ? record.scheduleId ?? "" : scheduleId ?? ""}>

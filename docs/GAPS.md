@@ -4,17 +4,13 @@ An audit on 2026-10-27 compared every user-visible capability of the original Fl
 
 Impact is for a fleet owner using the app day to day. Effort is a rough estimate.
 
-## High impact (18)
+## High impact (14)
 
 | Capability | Now | Effort | What to do |
 |---|---|---|---|
-| Edit an existing fuel transaction | Missing | half a day | Add updateFuelStop (replace lines in a transaction, re-run validateFuelPurchase, advance meters only forward) plus an Edit action on FuelStopRow that opens AddFuelStopSheet pre-filled. |
-| Filter fuel stops by unit, year, month, and specific date, with Clear filters | Missing | half a day | Add unit/year/month/date filters as URL search params, pass them to listFuelStops (WHERE on date and EXISTS on fuel_lines.equipment_id), and recompute the spend summary for the filtered set. |
-| See full fuel history (all stops, not just recent) | Partial | under 1 hour | Add 'Load more' or page links (cursor on date, createdAt), or combine with the date filters so older stops are reachable. |
 | Gear color/style picker (Cyan, Steel, Amber, Stealth) for the background gears | Fixed (PR #11) | under 1 hour | Add a small client GearStyleSwitcher (radiogroup over GEAR_THEMES, labels Cyan/Steel/Amber/Stealth, calls setGearTheme, reads the saved value after hydration like ThemeSwitcher does). Mount it in an 'Appearance' card on /settings next to a theme picker.… |
 | Data export / backup download (JSON, optional AES-256 password, optional include-API-key toggle, show/hide password) | Missing | half a day | Add an owner-scoped GET /api/export that streams the fleet's equipment, schedules, service records and fuel as JSON, and optionally a CSV zip. Fleet-scope it via requireFleet. Expose it as an 'Export my data' button on /settings. Password encryption is… |
 | Account basics for production: password reset and account management | Missing | half a day | Before inviting paying users, add forgot/reset password using Neon Auth (Better Auth) email reset, a change-password form on /settings, and a password visibility toggle on the auth form. Put these alongside the planned admin page work. |
-| Fuel receipt photo saved with the fuel stop and viewable via a Receipt button | Missing | half a day | Save the resized photo as a fuel_receipt attachment after addFuelStopAction succeeds and add a Receipt link on FuelStopRow. |
 | Applying AI intervals replaces the unit's existing schedule after an explicit confirmation | Partial | half a day | Show the existing item count and offer 'Replace current schedule' vs 'Add alongside', with a confirm step. Skip or flag picked items whose name and category match an existing item. |
 | Platform admin: see every user and fleet | Built, PR #10 waiting on migration | a day or more | Set the owner's neon_auth.user.role to 'admin' out of band, once. Add `role` to SessionUser and a `requireAdmin()` guard that runs on the server for every admin page and action, not only in proxy.ts. Build /admin to list fleets joined to neon_auth.user:… |
 | Deactivate or suspend a fleet (manual on/off switch) | Built, PR #10 waiting on migration | half a day | Add `fleets.status` ('active' / 'suspended' / 'past_due' / 'canceled'), defaulting to active, with suspended_at and a reason. Check it in requireFleet() and fleetForRequest() so every page, server action, AI call and the attachments route sees the same… |
@@ -27,18 +23,11 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Sign-in/sign-up page visual identity and hierarchy | Partial | half a day | Make /auth a split layout. The left or top panel reuses LogoMark, the wordmark, the grid background and GearsStage at low opacity, with 2-3 product bullets ('PM due by miles or days', 'Read odometers from a photo', 'AI diagnostics'). The right side holds… |
 | Landing page path to sign-up | Partial | under 1 hour | Make the primary CTA 'Start your fleet' linking to /auth/sign-up, add a secondary 'Sign in' button (the .landing-demo-btn styles), and add a small top-right 'Sign in' link. Show 'Open my fleet' only when a session exists, which can be checked server-side… |
 
-## Medium impact (45)
+## Medium impact (38)
 
 | Capability | Now | Effort | What to do |
 |---|---|---|---|
-| Line with gallons or price but no subtotal is rejected with a clear message | Missing | under 1 hour | Treat any product row with any field filled as used, and show an inline error when its subtotal is blank. |
-| Notes on a fuel stop (manual entry and AI-filled) | Partial | under 1 hour | Add a Notes textarea to the sheet, fill it from the receipt read, send it to addFuelStopAction, and show it on the stop row. |
-| Delete fuel transaction with confirmation | Partial | under 1 hour | Show date and total in the confirm text, disable the button while pending, and render r.message when ok is false. |
-| Store the receipt image with the stop, preview it, remove it, and view it later from the list ('Receipt' button) | Missing | half a day | Keep the resized photo in sheet state with a thumbnail and Remove control, save it with saveAttachment(kind: 'fuel_receipt', parentId: stop.id) after addFuelStop, and add a Receipt button on FuelStopRow that opens /api/attachments/[id]. |
 | Unit picker shows make/model and offers a 'Choose a unit' placeholder | Partial | under 1 hour | Add a blank 'Choose a truck' option when there is more than one unit, require it when that product is used, and show make/model in the label. |
-| Fuel spend summary broken down by product (Diesel, DEF, Reefer fuel, Total) | Partial | under 1 hour | Add a per-product sum (group fuel_lines by product) and render the four-cell fleet-summary dl, recomputed for the active filters. |
-| Per-stop detail: product, unit, gallons, $/gal, subtotal table and transaction total | Partial | under 1 hour | Select pricePerGallon and render gallons (3 dp) and $/gal per line, in a compact table or stacked layout on phones. |
-| Empty states: first-run vs no filter matches, with an action | Partial | under 1 hour | When there are no tractors or reefers, say 'Add a tractor or reefer to start tracking fuel' with a link to add equipment; add a no-match state with Clear filters once filters exist. |
 | Fleet-wide Maintenance page listing every schedule item for every unit | Partial | half a day | Add a fleet-wide 'All services' view: a /maintenance route, or a toggle on the dashboard attention section. Feed it with buildWorkboard and include ok and disabled items. Put a nav entry in SECTIONS. |
 | Same-day duplicate service warning with Cancel / Save as separate entry / Update existing record | Partial | under 1 hour | Once record editing exists, add an 'Update existing record' button that opens it. Return the existing record's mileage/hours, shop and notes in `existing` so the owner can tell whether it is really a duplicate. |
 | Success confirmations (toasts) after logging a service, updating a reading, or deleting a record | Missing | under 1 hour | Add a small toast provider in AppShell and fire success messages such as 'Oil change logged for Unit 12' and 'Unit 12 updated to 234,567 mi'. The CSS already exists. |

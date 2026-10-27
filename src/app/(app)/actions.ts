@@ -10,7 +10,7 @@ import { addSchedule, applyDefaultSchedule, deleteSchedule, updateSchedule, type
 import { deleteServiceRecord, logService, updateServiceRecord, type ServiceEditInput, type ServiceInput } from "@/server/serviceStore";
 import { deleteAttachments, listAttachments, saveAttachment } from "@/server/attachmentsStore";
 import { neonObjectStore } from "@/server/objectStore";
-import { addFuelStop, deleteFuelStop, type FuelStopInput } from "@/server/fuelStore";
+import { addFuelStop, deleteFuelStop, updateFuelStop, type FuelStopInput } from "@/server/fuelStore";
 
 /**
  * Server actions are public HTTP endpoints. Each one derives the fleet from the session through
@@ -124,6 +124,14 @@ export async function addFuelStopAction(input: FuelStopInput) {
   return withFleet((actor) => addFuelStop(getDb(), actor, input));
 }
 
+export async function updateFuelStopAction(id: string, input: FuelStopInput) {
+  return withFleet((actor) => updateFuelStop(getDb(), actor, id, input));
+}
+
 export async function deleteFuelStopAction(id: string) {
-  return withFleet(({ fleetId }) => deleteFuelStop(getDb(), fleetId, id));
+  return withFleet(async ({ fleetId }) => {
+    const r = await deleteFuelStop(getDb(), fleetId, id);
+    if (r.ok) await deleteAttachments(getDb(), await neonObjectStore(), fleetId, { kind: "fuel_receipt", parentId: id });
+    return r;
+  });
 }
