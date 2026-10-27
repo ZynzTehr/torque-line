@@ -28,7 +28,8 @@ export default function Page() {
         <section className="card mt-4 max-w-md" aria-labelledby="data-heading">
           <h3 id="data-heading" className="mb-2">Your data</h3>
           <p className="text-secondary mb-3 text-sm">One zip file: spreadsheets of your units, service, fuel, readings, schedules and diagnoses, plus every receipt photo.</p>
-          <a className="btn btn-secondary" href="/api/export" download>Download my data</a>
+          {/* No `download` attribute: the route's Content-Disposition saves the zip, and a redirect to sign in or the paused page still navigates. */}
+          <a className="btn btn-secondary" href="/api/export">Download my data</a>
         </section>
         <section className="card mt-4 max-w-md" aria-labelledby="appearance-heading">
           <h3 id="appearance-heading" className="mb-2">Gear style</h3>

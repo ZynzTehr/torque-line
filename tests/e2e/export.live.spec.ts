@@ -75,20 +75,31 @@ test("the owner downloads one zip with their records and receipt photos, and onl
   expect(service).toContain(`,Brake adjustment,`);
   expect(service).toContain(`,150.00,"Joe's, Exit 12",'=1+1,${photo},`);
   const json = JSON.parse(strFromU8(files["fleet.json"]));
-  expect(json).toMatchObject({ formatVersion: 1, fleet: { id: fleetId }, missingFiles: ["receipts/2026-10-14 301 brake adjustment (2).jpg"], unreadableFiles: [] });
+  expect(json).toMatchObject({ formatVersion: 1, fleet: { id: fleetId }, missingFiles: ["receipts/2026-10-14 301 brake adjustment (2).jpg"], unreadableFiles: [], skippedFiles: [] });
+  expect(json.photos).toEqual([
+    expect.objectContaining({ file: photo, inZip: true, kind: "service_receipt", contentType: "image/jpeg", byteSize: files[photo].byteLength }),
+    expect.objectContaining({ file: "receipts/2026-10-14 301 brake adjustment (2).jpg", inZip: false }),
+  ]);
   expect(json.serviceRecords).toEqual([expect.objectContaining({ serviceType: "Brake adjustment", cost: "150.00", receiptFiles: [photo] })]);
   expect(json.units.map((u: { unitNumber: string }) => u.unitNumber)).toEqual(["301", "T-OLD"]);
 
-  // Paused accounts can't export; signed-out visitors are sent to sign in.
+  // Paused accounts can't export; signed-out visitors are sent to sign in. Clicking the real link must show
+  // those pages, not save them as a download.
   await db.query(`update fleets set status = 'inactive' where id = $1`, [fleetId]);
   try {
     const paused = await page.request.get("/api/export", { maxRedirects: 0 });
     expect(paused.status()).toBe(307);
     expect(paused.headers().location).toContain("/account-paused");
+    await page.getByRole("link", { name: "Download my data" }).click();
+    await page.waitForURL("**/account-paused");
   } finally {
     await db.query(`update fleets set status = 'active' where id = $1`, [fleetId]);
     await db.end();
   }
+  await page.goto("/settings");
+  await page.context().clearCookies();
+  await page.getByRole("link", { name: "Download my data" }).click();
+  await page.waitForURL("**/auth/sign-in**");
   const anonymous = await browser.newContext();
   const signedOut = await anonymous.request.get("/api/export", { maxRedirects: 0 });
   expect(signedOut.status()).toBe(307);
