@@ -20,3 +20,26 @@ export function PhotoButton({ label, onPhoto, busyLabel = "Reading photo…" }: 
     </label>
   );
 }
+
+/** A photo held in a form until the record saves, with a local preview URL that is released when replaced. */
+export function useHeldPhoto() {
+  const [held, setHeld] = useState<{ file: File; preview: string } | null>(null);
+  const hold = (file: File | null) => setHeld((prev) => {
+    if (prev) URL.revokeObjectURL(prev.preview);
+    return file ? { file, preview: URL.createObjectURL(file) } : null;
+  });
+  return { file: held?.file ?? null, preview: held?.preview ?? null, hold };
+}
+
+/** Thumbnail of a new photo (`preview`) or a saved one (`savedId`), with a Remove button. */
+export function ReceiptPreview({ preview, savedId, onRemove }: { preview: string | null; savedId: string | null; onRemove: () => void }) {
+  if (!preview && !savedId) return null;
+  return (
+    <div className="flex items-center gap-3">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL or an authenticated attachment, not an optimizable asset */}
+      <img src={preview ?? `/api/attachments/${savedId}`} alt="Receipt photo" className="h-16 w-16 rounded border border-line object-cover" />
+      <span className="text-secondary text-sm">{preview ? "Saved with the record" : "Receipt on file"}</span>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>Remove</button>
+    </div>
+  );
+}

@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { addFuelStopAction } from "@/app/(app)/actions";
+import { addFuelStopAction, attachReceiptAction, removeAttachmentAction, updateFuelStopAction } from "@/app/(app)/actions";
 import { readFuelReceiptAction } from "@/app/(app)/ai-actions";
 import { Sheet } from "@/components/ui/Sheet";
 import { formatCurrency } from "@/domain/format";
-import { PhotoButton } from "./PhotoButton";
+import { PhotoButton, ReceiptPreview, useHeldPhoto } from "./PhotoButton";
 
 type Product = "diesel" | "def" | "reefer";
 type Line = { gallons: string; price: string; subtotal: string; reading: string };
@@ -13,19 +13,45 @@ const EMPTY: Line = { gallons: "", price: "", subtotal: "", reading: "" };
 const LABEL: Record<Product, string> = { diesel: "Diesel", def: "DEF", reefer: "Reefer fuel" };
 const today = () => new Date().toLocaleDateString("en-CA");
 const num = (s: string) => (s.trim() === "" ? undefined : Number(s));
+const text = (v: number | null | undefined) => (v == null ? "" : String(v));
 
-/** One stop, one receipt, up to three products. Unused products stay blank. */
-export function AddFuelStopSheet({ open, onClose, tractors, reefers }: {
-  open: boolean; onClose: () => void; tractors: { id: string; unitNumber: string }[]; reefers: { id: string; unitNumber: string }[];
+type UnitOption = { id: string; unitNumber: string };
+
+/** A saved stop as the edit form needs it. */
+export interface EditableFuelStop {
+  id: string; date: string; station: string | null; notes: string | null; receiptId: string | null;
+  lines: { equipmentId: string; product: Product; gallons: number | null; pricePerGallon: number | null; subtotal: number; odometer: number | null; hours: number | null }[];
+}
+
+function linesFrom(stop?: EditableFuelStop): Record<Product, Line> {
+  const all = { diesel: EMPTY, def: EMPTY, reefer: EMPTY };
+  for (const l of stop?.lines ?? []) {
+    all[l.product] = { gallons: text(l.gallons), price: text(l.pricePerGallon), subtotal: l.subtotal.toFixed(2), reading: text(l.product === "reefer" ? l.hours : l.odometer) };
+  }
+  return all;
+}
+
+/**
+ * One stop, one receipt, up to three products; unused products stay blank. With `existing` it edits that
+ * stop. A receipt photo, read by the assistant or attached as is, is saved with the stop.
+ */
+export function AddFuelStopSheet({ open, onClose, tractors, reefers, existing }: {
+  open: boolean; onClose: () => void; tractors: UnitOption[]; reefers: UnitOption[]; existing?: EditableFuelStop;
 }) {
-  const [lines, setLines] = useState<Record<Product, Line>>({ diesel: EMPTY, def: EMPTY, reefer: EMPTY });
-  const [truck, setTruck] = useState(tractors[0]?.id ?? "");
-  const [reefer, setReefer] = useState(reefers[0]?.id ?? "");
-  const [date, setDate] = useState(today());
-  const [station, setStation] = useState("");
+  const [lines, setLines] = useState<Record<Product, Line>>(() => linesFrom(existing));
+  const [truck, setTruck] = useState(existing?.lines.find((l) => l.product !== "reefer")?.equipmentId ?? tractors[0]?.id ?? "");
+  const [reefer, setReefer] = useState(existing?.lines.find((l) => l.product === "reefer")?.equipmentId ?? reefers[0]?.id ?? "");
+  const [date, setDate] = useState(existing?.date ?? today());
+  const [station, setStation] = useState(existing?.station ?? "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const { file: receipt, preview, hold } = useHeldPhoto();
+  const [dropExisting, setDropExisting] = useState(false);
+  const [savedWithoutReceipt, setSavedWithoutReceipt] = useState(false);
+  const existingReceipt = existing?.receiptId && !dropExisting && !receipt ? existing.receiptId : null;
+  const close = () => { hold(null); setDropExisting(false); setSavedWithoutReceipt(false); setError(null); setNote(null); onClose(); };
 
   const update = (p: Product, field: keyof Line, value: string) => setLines((all) => {
     const next = { ...all[p], [field]: value };
@@ -39,38 +65,57 @@ export function AddFuelStopSheet({ open, onClose, tractors, reefers }: {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    const started = products.find((p) => lines[p].subtotal.trim() === "" && (lines[p].gallons || lines[p].price || lines[p].reading));
+    if (started) { setError(`Enter the ${LABEL[started]} subtotal, or clear that row.`); return; }
     const used = products.filter((p) => lines[p].subtotal.trim() !== "");
+    if (!used.length) { setError("Enter the subtotal for at least one product."); return; }
     setPending(true);
     setError(null);
-    const r = await addFuelStopAction({
-      date, station: station || undefined,
+    const input = {
+      date, station: station || undefined, notes: notes || undefined,
       lines: used.map((p) => ({
         equipmentId: p === "reefer" ? reefer : truck, product: p,
         gallons: num(lines[p].gallons), pricePerGallon: num(lines[p].price), subtotal: Number(lines[p].subtotal),
         ...(p === "reefer" ? { hours: num(lines[p].reading) } : p === "diesel" ? { odometer: num(lines[p].reading) } : {}),
       })),
-    });
+    };
+    const r = existing ? await updateFuelStopAction(existing.id, input) : await addFuelStopAction(input);
+    if (!r.ok) { setPending(false); setError(r.message); return; }
+    let receiptError: string | null = null;
+    if (receipt) {
+      const form = new FormData();
+      form.set("kind", "fuel_receipt"); form.set("parentId", r.id); form.set("photo", receipt);
+      const saved = await attachReceiptAction(form);
+      if (!saved.ok) receiptError = saved.message;
+    } else if (dropExisting && existing?.receiptId) {
+      const removed = await removeAttachmentAction(existing.receiptId);
+      if (!removed.ok) receiptError = removed.message;
+    }
     setPending(false);
-    if (!r.ok) { setError(r.message); return; }
-    setLines({ diesel: EMPTY, def: EMPTY, reefer: EMPTY }); setStation(""); setNote(null); onClose();
+    if (receiptError) { setSavedWithoutReceipt(true); setError(`The fuel stop was saved, but the receipt photo wasn't: ${receiptError}`); return; }
+    if (!existing) { setLines({ diesel: EMPTY, def: EMPTY, reefer: EMPTY }); setStation(""); setNotes(""); }
+    close();
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="Add fuel stop"
-      footer={<>
+    <Sheet open={open} onClose={close} title={existing ? "Edit fuel stop" : "Add fuel stop"}
+      footer={savedWithoutReceipt ? <button type="button" className="btn btn-primary" onClick={close}>Close</button> : <>
         <span className="text-secondary mr-auto self-center text-sm">Total <strong className="text-fg font-mono">{formatCurrency(total)}</strong></span>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" form="fuel-form" className="btn btn-primary" disabled={pending || total <= 0}>Save stop</button>
+        <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
+        <button type="submit" form="fuel-form" className="btn btn-primary" disabled={pending}>{existing ? "Save changes" : "Save stop"}</button>
       </>}>
       <form id="fuel-form" onSubmit={submit} className="flex flex-col gap-4">
-        <PhotoButton label="Fill from receipt photo" onPhoto={async (photo) => {
+        <div className="flex flex-wrap items-center gap-2">
+        <PhotoButton label={existing ? "Re-read a receipt photo" : "Fill from receipt photo"} onPhoto={async (photo) => {
           setError(null);
+          hold(photo);
           const form = new FormData();
           form.set("photo", photo);
           const r = await readFuelReceiptAction(form);
-          if (!r.ok) { setError(r.message); return; }
+          if (!r.ok) { setError(`${r.message} The photo will still be saved with the stop.`); return; }
           if (r.date) setDate(r.date);
           if (r.location) setStation(r.location);
+          if (r.notes) setNotes(r.notes);
           setLines((all) => {
             const next = { ...all };
             for (const item of r.items) {
@@ -84,6 +129,9 @@ export function AddFuelStopSheet({ open, onClose, tractors, reefers }: {
           });
           setNote(`Filled from the receipt (${r.confidence} confidence). Check the units and amounts before saving.`);
         }} />
+        <PhotoButton label="Attach photo only" busyLabel="Preparing photo…" onPhoto={async (photo) => hold(photo)} />
+        </div>
+        <ReceiptPreview preview={preview} savedId={existingReceipt} onRemove={() => (receipt ? hold(null) : setDropExisting(true))} />
         {note && <p className="text-secondary text-sm" role="status">{note}</p>}
         <div className="grid grid-cols-2 gap-3">
           <div className="form-group"><label className="form-label" htmlFor="fuel-date">Date</label>
@@ -106,6 +154,10 @@ export function AddFuelStopSheet({ open, onClose, tractors, reefers }: {
             </div>
           </fieldset>
         ))}
+        <div className="form-group">
+          <label className="form-label" htmlFor="fuel-notes">Notes</label>
+          <textarea id="fuel-notes" className="form-textarea" rows={2} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
         {error && <p role="alert" className="text-danger text-sm">{error}</p>}
       </form>
     </Sheet>
