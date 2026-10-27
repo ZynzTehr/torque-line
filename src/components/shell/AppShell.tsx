@@ -7,6 +7,7 @@ import { Icon } from "@/components/Icon";
 import { GearsStage } from "@/components/fx/GearsStage";
 import { BRAND } from "@/lib/brand";
 import { classifySwipe, navDirection, SECTIONS, sectionIndex } from "./sections";
+import { SignOutButton } from "./SignOutButton";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
 /** Elements where a horizontal drag means something else, so section swiping stays out of the way. */
@@ -65,6 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="sidebar-footer">
           <span className="text-secondary mb-1.5 block text-xs font-semibold">Theme</span>
           <ThemeSwitcher />
+          <SignOutButton className="nav-item mt-2" />
         </div>
       </aside>
       {menuOpen && <button className="fixed inset-0 z-[90] bg-black/40 md:hidden" aria-label="Close navigation" onClick={closeMenu} />}

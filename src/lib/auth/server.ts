@@ -18,7 +18,7 @@ export function getAuth(): NeonAuthInstance {
   return instance;
 }
 
-export const LOGIN_URL = "/auth/sign-in";
+export { LOGIN_URL } from "./routes";
 
 export interface SessionUser {
   id: string;

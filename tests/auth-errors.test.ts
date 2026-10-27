@@ -15,6 +15,6 @@ describe("authFailureMessage", () => {
 
   it("keeps any other failure's class and message visible", () => {
     expect(authFailureMessage(new SyntaxError("The string did not match the expected pattern.")))
-      .toBe("Something went wrong signing you in. Please try again. (SyntaxError: The string did not match the expected pattern.)");
+      .toBe("Something went wrong. Please try again. (SyntaxError: The string did not match the expected pattern.)");
   });
 });

@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Runs against a real Neon branch: LIVE=1 npx playwright test live --project=desktop
-// Creates real users; point .env.local at a throwaway branch (neon checkout <name> --create) first.
-// Against the deployed site: add E2E_BASE_URL=https://torque-line.vercel.app, then delete the e2e+…@example.com users and their fleets.
+// Creates real users, so never against production. Pull the test branch's env to its own file and layer it over .env.local:
+//   neon env pull --branch e2e-20261026 --file .env.e2e && set -a && . ./.env.local && . ./.env.e2e && set +a
 test.skip(!process.env.LIVE, "set LIVE=1 to run against a real Neon branch");
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
@@ -137,4 +137,23 @@ test("another fleet cannot see the first fleet's unit or files", async ({ browse
   const anonymous = await browser.newContext();
   expect((await anonymous.request.get(shared.attachmentUrl!)).status()).toBe(401);
   await anonymous.close();
+});
+
+test("the owner can sign out, and the dashboard then asks them to sign in", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: JSON.parse(shared.storage!) });
+  const page = await context.newPage();
+  await page.goto("/settings");
+  await expect(page.getByText(`Signed in as ${owner.email}`)).toBeVisible();
+
+  // The sidebar offers it too; on a phone the sidebar sits behind the menu button.
+  const menu = page.getByRole("button", { name: "Open navigation" });
+  if (await menu.isVisible()) await menu.click();
+  await expect(page.locator("#sidebar").getByRole("button", { name: "Sign out" })).toBeVisible();
+  if (await menu.isVisible()) await page.getByRole("button", { name: "Close navigation" }).click();
+
+  await page.getByRole("main").getByRole("button", { name: "Sign out" }).click();
+  await page.waitForURL(/\/auth\/sign-in/);
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/auth\/sign-in/);
+  await context.close();
 });

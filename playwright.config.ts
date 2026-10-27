@@ -14,7 +14,8 @@ export default defineConfig({
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"], channel: process.env.PW_CHANNEL ?? "chrome", viewport: { width: 1440, height: 900 } } },
     { name: "phone", use: { ...devices["Pixel 7"], channel: process.env.PW_CHANNEL ?? "chrome" } },
-    // Safari's engine (Playwright WebKit). Run with --project=safari.
+    // Safari's engine (Playwright WebKit). Run with --project=safari against an https URL (E2E_BASE_URL):
+    // WebKit drops the __Secure- session cookie on http://localhost, so signed-in tests fail locally.
     { name: "safari", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: remote ? undefined : {
