@@ -14,10 +14,11 @@ export const maxDuration = 300;
 /**
  * "Download my data": the signed-in owner's whole fleet as one zip, streamed as it is built. Streamed
  * function responses are not subject to Vercel's 4.5 MB body limit, so nothing is staged in storage.
- * Signed-out visitors go to sign in and paused accounts to the paused page (requireFleet).
+ * Signed-out visitors go to sign in and paused accounts to the paused page (requireFleet). A closed or
+ * deletion-scheduled account can still download its data.
  */
 export async function GET() {
-  const fleet = await requireFleet();
+  const fleet = await requireFleet({ allowClosedAccount: true });
   try {
     const body = await exportFleet(getDb(), await neonObjectStore(), fleet.fleetId, { onDone: (s) => {
       const line = `export ${s.cancelled ? "cancelled by the client" : "done"} after ${(s.ms / 1000).toFixed(1)} s: ${s.photos} photos, ${(s.bytes / 1e6).toFixed(1)} MB, ` +

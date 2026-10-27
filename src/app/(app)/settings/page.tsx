@@ -1,14 +1,15 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { GearStyleSwitcher } from "@/components/shell/GearStyleSwitcher";
 import { SignOutButton } from "@/components/shell/SignOutButton";
+import { AccountClosure } from "@/components/settings/AccountClosure";
 import { ChangePassword } from "@/components/settings/ChangePassword";
 import Link from "next/link";
 import { getDb } from "@/db";
-import { getSessionUser, LOGIN_URL } from "@/lib/auth/server";
+import { getSessionUser } from "@/lib/auth/server";
 import { isPlatformAdmin } from "@/server/adminStore";
+import { requireFleet } from "@/server/fleet";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -39,16 +40,27 @@ export default function Page() {
         <Suspense fallback={null}>
           <AdminLink />
         </Suspense>
+        <section className="card mt-4 max-w-md" aria-labelledby="closure-heading">
+          <h3 id="closure-heading" className="mb-2">Close or delete account</h3>
+          <p className="text-secondary mb-3 text-sm">Closing keeps your data until you come back. Deleting erases it after 30 days.</p>
+          <Suspense fallback={null}>
+            <Closure />
+          </Suspense>
+        </section>
       </div>
     </>
   );
 }
 
+/** requireFleet also sends a closed or paused account to its own page, as every app page does. */
 async function SignedInAs() {
-  await connection();
-  const user = await getSessionUser();
-  if (!user) redirect(LOGIN_URL);
+  const { user } = await requireFleet();
   return <p className="text-secondary mb-4 text-sm">Signed in as <strong className="text-fg">{user.email}</strong></p>;
+}
+
+async function Closure() {
+  const { user } = await requireFleet();
+  return <AccountClosure email={user.email} />;
 }
 
 /** Shown only to platform admins. */

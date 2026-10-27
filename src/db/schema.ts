@@ -272,3 +272,81 @@ export const attachments = pgTable("attachments", {
   index("attachments_parent").on(t.fleetId, t.kind, t.parentId),
   check("attachments_size", sql`${t.byteSize} > 0 and ${t.byteSize} <= 3000000`),
 ]);
+
+export const accountState = pgEnum("account_state", ["closed", "deletion_scheduled"]);
+
+/**
+ * A user who closed their account or asked for it to be deleted; no row means the account is open. Per user, not per
+ * fleet, and separate from fleets.status: an admin pause is lifted only by an admin, a closure by the user.
+ * purge_after is when a scheduled deletion becomes due (30 days after the request).
+ */
+export const accountStates = pgTable("account_states", {
+  userId: text("user_id").primaryKey(),
+  state: accountState("state").notNull(),
+  changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  purgeAfter: timestamp("purge_after", { withTimezone: true }),
+}, (t) => [
+  check("account_states_purge_after", sql`(${t.state} = 'deletion_scheduled') = (${t.purgeAfter} is not null)`),
+  index("account_states_due").on(t.purgeAfter),
+]);
+
+/*
+ * Anonymized statistics, copied from an account in the same transaction that purges it. They contain no personal
+ * data: no names, emails, user or fleet ids, VINs, unit numbers, station or shop names, notes or other free text,
+ * photos, or exact dates (months only). unit_ref groups the rows of one former unit; it is random, generated at
+ * purge time, and no mapping back to the unit is kept.
+ */
+const unitRef = () => uuid("unit_ref").notNull();
+const unitDescription = () => ({
+  equipmentType: equipmentType("equipment_type").notNull(),
+  year: smallint("year"),
+  make: text("make"),
+  model: text("model"),
+});
+
+/** Anonymized service history: what was done to which kind of unit, at what reading and cost. No personal data. */
+export const anonServiceEvents = pgTable("anon_service_events", {
+  id: id(),
+  unitRef: unitRef(),
+  ...unitDescription(),
+  engineSize: text("engine_size"),
+  /** A standard service name, or "other"; never the owner's own wording. */
+  serviceType: text("service_type").notNull(),
+  mileage: integer("mileage"),
+  hours: integer("hours"),
+  cost: money("cost"),
+  month: date("month").notNull(),
+});
+
+/** Anonymized fuel purchases, one row per product line. No personal data. */
+export const anonFuelLines = pgTable("anon_fuel_lines", {
+  id: id(),
+  unitRef: unitRef(),
+  ...unitDescription(),
+  product: fuelProduct("product").notNull(),
+  gallons: numeric("gallons", { precision: 10, scale: 3, mode: "number" }),
+  pricePerGallon: numeric("price_per_gallon", { precision: 8, scale: 3, mode: "number" }),
+  month: date("month").notNull(),
+});
+
+/** Anonymized meter readings: each former unit's highest reading per month, for cost per mile or hour. No personal data. */
+export const anonMeterReadings = pgTable("anon_meter_readings", {
+  id: id(),
+  unitRef: unitRef(),
+  kind: meterKind("kind").notNull(),
+  month: date("month").notNull(),
+  value: integer("value").notNull(),
+});
+
+/** Anonymized diagnosis outcomes, one row per suggested cause. session_ref is random like unit_ref. No personal data. */
+export const anonDiagnosticOutcomes = pgTable("anon_diagnostic_outcomes", {
+  id: id(),
+  unitRef: unitRef(),
+  sessionRef: uuid("session_ref").notNull(),
+  ...unitDescription(),
+  causeName: text("cause_name").notNull(),
+  likelihood: likelihood("likelihood").notNull(),
+  tried: boolean("tried").notNull(),
+  ruledOut: boolean("ruled_out").notNull(),
+  resolved: boolean("resolved").notNull(),
+});

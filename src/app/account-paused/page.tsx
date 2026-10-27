@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SignOutButton } from "@/components/shell/SignOutButton";
-import { LOGIN_URL } from "@/lib/auth/routes";
+import { CLOSED_URL, LOGIN_URL } from "@/lib/auth/routes";
 import { BRAND } from "@/lib/brand";
 import { currentFleetAnyStatus } from "@/server/fleet";
 
@@ -24,6 +24,7 @@ export default function AccountPausedPage() {
 async function PausedMessage() {
   const fleet = await currentFleetAnyStatus();
   if (!fleet) redirect(LOGIN_URL);
+  if (fleet.account) redirect(CLOSED_URL); // the user's own closure comes first: it is the one they can lift
   if (fleet.status === "active") {
     return (
       <>
