@@ -44,9 +44,15 @@ function VerifyEmailForm({ email }: { email: string }) {
   const [wait, setWait] = useState(arrivalWait);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Separate from sendState, which stays "sent" during a resend: a second tap mid-request would send a second code.
+  const [resending, setResending] = useState(false);
+  const inFlight = useRef(false);
   const sentOnArrival = useRef(false);
 
   const send = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setResending(true);
     setError(null);
     setSendState((s) => (s === "sent" ? s : "sending"));
     try {
@@ -60,6 +66,9 @@ function VerifyEmailForm({ email }: { email: string }) {
       // An earlier code still works; only say nothing went out when nothing has.
       setSendState((s) => (s === "sent" ? s : "failed"));
       setWait(isRateLimited(caught) ? RESEND_AFTER : 0);
+    } finally {
+      inFlight.current = false;
+      setResending(false);
     }
   }, [email]);
 
@@ -109,7 +118,7 @@ function VerifyEmailForm({ email }: { email: string }) {
       </div>
       {error && <p id="verify-error" role="alert" className="text-danger mb-4 text-sm">{error}</p>}
       <button className="btn btn-primary w-full" type="submit" disabled={pending || code.length !== 6}>{pending ? "Checking…" : "Verify email"}</button>
-      <button className="btn btn-ghost mt-2 w-full" type="button" onClick={send} disabled={wait > 0 || sendState === "sending"}>
+      <button className="btn btn-ghost mt-2 w-full" type="button" onClick={send} disabled={wait > 0 || resending}>
         {wait > 0 ? `Send a new code in ${wait}s` : "Send a new code"}
       </button>
       <p className="text-secondary mt-4 text-center text-sm">

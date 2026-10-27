@@ -1,5 +1,8 @@
 import "server-only";
+import { cache } from "react";
 import { createNeonAuth } from "@neondatabase/auth/next/server";
+import { getDb } from "@/db";
+import { sessionIsLive } from "@/server/authSessionsStore";
 
 type NeonAuthInstance = ReturnType<typeof createNeonAuth>;
 let instance: NeonAuthInstance | null = null;
@@ -26,10 +29,17 @@ export interface SessionUser {
   name: string | null;
 }
 
-/** The signed-in user, or null. Never throws for an anonymous request. */
-export async function getSessionUser(): Promise<SessionUser | null> {
+/**
+ * The signed-in user, or null. Never throws for an anonymous request. Once per request.
+ * The SDK answers from a signed session cache cookie for up to five minutes without asking the auth service, so a
+ * session ended elsewhere (a password reset or change signing out other devices) would keep working until then.
+ * Checking the session's row makes the sign-out take effect on that device's next request.
+ */
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const { data: session } = await getAuth().getSession();
   const user = session?.user;
-  if (!user?.id) return null;
+  const token = session?.session?.token;
+  if (!user?.id || !token) return null;
+  if (!(await sessionIsLive(getDb(), token))) return null;
   return { id: user.id, email: user.email, name: user.name ?? null };
-}
+});
