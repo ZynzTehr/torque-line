@@ -29,6 +29,13 @@
       "when": 1793101644113,
       "tag": "0003_service_schedule_link",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793119012040,
+      "tag": "0004_account_closure",
+      "breakpoints": true
     }
   ]
 }
