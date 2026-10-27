@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { Pool } from "@neondatabase/serverless";
 
 // Password reset, password change and email verification, against the e2e Neon branch only (see live.spec.ts for setup).
@@ -49,16 +49,6 @@ async function submitAuthForm(page: Page, button: string) {
     await expect(page.getByRole("button", { name: button })).toBeEnabled();
     await page.waitForTimeout(RATE_WINDOW);
   }
-}
-
-/**
- * The app trusts a signed session cache cookie for a few minutes before asking the auth service again. Drop it, the
- * way its expiry would, so the next request checks the session itself.
- */
-async function dropSessionCache(context: BrowserContext) {
-  const kept = (await context.cookies()).filter((c) => !c.name.includes("session_data"));
-  await context.clearCookies();
-  await context.addCookies(kept);
 }
 
 async function signIn(page: Page, email: string, password: string) {
@@ -138,8 +128,8 @@ test("forgot password: neutral answer, reset by the emailed link, every device s
   await page.waitForURL("**/auth/sign-in?notice=password-reset");
   await expect(page.getByRole("status")).toHaveText("Password updated and all devices signed out. Sign in with your new password.");
 
-  // The reset ended the other device's session.
-  await dropSessionCache(elsewhere);
+  // The reset ended the other device's session, on its very next request: its session cache cookie is still fresh.
+  expect((await elsewhere.cookies()).some((c) => c.name.includes("session_data"))).toBe(true);
   await other.goto("/dashboard");
   await other.waitForURL("**/auth/sign-in**");
   await elsewhere.close();
@@ -185,13 +175,12 @@ test("change password in settings signs out other devices only", async ({ browse
   await sheet.getByRole("button", { name: "Change password" }).click();
   await expect(sheet).toBeHidden();
   await expect(page.getByText("Password changed. Other devices are signed out.")).toBeVisible();
-  // Both devices are checked against the session itself, not the cache cookie: this one stays signed in…
-  await dropSessionCache(here);
+  // With both session cache cookies still fresh, this device stays signed in…
   await page.reload();
   await expect(page.getByText(`Signed in as ${owner.email}`)).toBeVisible();
 
-  // …and the other one is signed out.
-  await dropSessionCache(elsewhere);
+  // …and the other one is signed out on its next request.
+  expect((await elsewhere.cookies()).some((c) => c.name.includes("session_data"))).toBe(true);
   await other.goto("/dashboard");
   await other.waitForURL("**/auth/sign-in**");
 
@@ -273,11 +262,19 @@ test.describe("email verification", () => {
       await page.waitForURL("**/auth/verify-email");
       await expect(page.getByRole("status")).toContainText("We sent a 6-digit code");
 
-      // Resend after the cooldown; the newest code is the one that works.
+      // Resend after the cooldown; the newest code is the one that works. A double tap on a slow connection sends one.
       const before = await otpRowIds(owner.email);
       const resend = page.getByRole("button", { name: "Send a new code" });
       await expect(resend).toBeEnabled({ timeout: 75_000 });
-      await resend.click();
+      await page.route("**/email-otp/send-verification-otp", async (route) => {
+        await new Promise((r) => setTimeout(r, 1_500));
+        await route.continue();
+      });
+      const sendsBefore = sends;
+      await resend.dblclick();
+      await expect(page.getByRole("button", { name: /Send a new code in \d+s/ })).toBeDisabled({ timeout: 15_000 });
+      await page.unroute("**/email-otp/send-verification-otp");
+      expect(sends - sendsBefore).toBe(1);
       await plantCode(owner.email, before, "424242");
       await page.getByLabel("Code").fill("424242");
       await page.getByRole("button", { name: "Verify email" }).click();
