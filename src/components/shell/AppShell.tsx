@@ -77,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <nav className="bg-surface/95 border-line fixed inset-x-0 bottom-0 z-[80] grid grid-cols-4 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      <nav className="bg-surface/95 border-line fixed inset-x-0 bottom-0 z-[80] grid grid-cols-5 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
         aria-label="Sections">
         <Suspense fallback={<TabLinks pathname="" />}><ActiveTabLinks /></Suspense>
       </nav>

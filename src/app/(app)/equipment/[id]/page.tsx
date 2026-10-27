@@ -3,9 +3,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/db";
-import { formatCurrency, formatDate, formatMileage, getStalenessLabel } from "@/domain/format";
+import { formatDate, formatMileage, getStalenessLabel } from "@/domain/format";
 import { equipmentReading, serviceStatus } from "@/domain/maintenance";
-import { ApplyScheduleButton, UnitActions } from "@/components/fleet/UnitActions";
+import { ApplyScheduleButton, UnitActions, UnitManage } from "@/components/fleet/UnitActions";
+import { ServiceRecordItem } from "@/components/fleet/ServiceRecordItem";
+import { ServiceRecordLine } from "@/components/fleet/ServiceRecordLine";
+import { latestAttachmentIds } from "@/server/attachmentsStore";
 import { ScheduleItemRow } from "@/components/fleet/ScheduleItemActions";
 import { SuggestIntervals } from "@/components/fleet/SuggestIntervals";
 import { UnitCosts } from "@/components/fleet/UnitCosts";
@@ -40,6 +43,7 @@ async function UnitDetail({ params }: { params: Promise<{ id: string }> }) {
   const row = await getEquipment(db, fleetId, id);
   if (!row) notFound();
   const [scheduleRows, records, costs] = await Promise.all([listSchedules(db, fleetId, id), listServiceRecords(db, fleetId, id), unitCostSummary(db, fleetId, id)]);
+  const receipts = await latestAttachmentIds(db, fleetId, "service_receipt", records.map((r) => r.id));
   const unit = toBoardEquipment(row);
   const schedules = scheduleRows.map(toBoardSchedule);
 
@@ -51,8 +55,13 @@ async function UnitDetail({ params }: { params: Promise<{ id: string }> }) {
           <h1 className="font-mono">Unit {unit.unitNumber}</h1>
           <p className="text-secondary text-sm">{[row.year, row.make, row.model, row.engineSize].filter(Boolean).join(" · ") || "No details yet"}</p>
           <p className="mt-1 text-sm"><strong>{equipmentReading(unit)}</strong>{unit.type !== "trailer" && <span className="text-secondary"> · {getStalenessLabel(unit.readingUpdatedAt)}</span>}</p>
+          {row.vin && <p className="text-secondary font-mono text-xs">VIN {row.vin}</p>}
+          {row.notes && <p className="text-secondary mt-1 max-w-prose whitespace-pre-line text-sm">{row.notes}</p>}
         </div>
-        <UnitActions unit={unit} schedules={schedules} size="md" />
+        <div className="flex flex-col items-end gap-2">
+          <UnitActions unit={unit} schedules={schedules} size="md" />
+          <UnitManage unit={{ id: row.id, unitNumber: row.unitNumber, type: row.type, year: row.year, make: row.make, model: row.model, engineSize: row.engineSize, vin: row.vin, notes: row.notes }} />
+        </div>
       </header>
 
       {costs && <UnitCosts type={unit.type} costs={costs} />}
@@ -98,14 +107,10 @@ async function UnitDetail({ params }: { params: Promise<{ id: string }> }) {
         {records.length === 0 ? <p className="text-secondary text-sm">No services logged yet.</p> : (
           <ul className="attention-list">
             {records.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line px-4 py-3 last:border-b-0">
-                <span className="min-w-0">
-                  <strong className="block text-sm">{r.serviceType}</strong>
-                  <span className="text-secondary text-xs">
-                    {formatDate(r.date)}{r.mileage != null ? ` · ${formatMileage(r.mileage)} mi` : ""}{r.hours != null ? ` · ${formatMileage(r.hours)} hrs` : ""}{r.shop ? ` · ${r.shop}` : ""}
-                  </span>
-                </span>
-                {r.cost != null && <span className="font-mono text-sm">{formatCurrency(r.cost)}</span>}
+              <li key={r.id} className="border-b border-line px-2 py-2 last:border-b-0">
+                <ServiceRecordItem unit={unit} schedules={schedules} record={{ ...r, receiptId: receipts.get(r.id) ?? null }}>
+                  <ServiceRecordLine record={r} />
+                </ServiceRecordItem>
               </li>
             ))}
           </ul>

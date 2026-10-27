@@ -4,24 +4,16 @@ An audit on 2026-10-27 compared every user-visible capability of the original Fl
 
 Impact is for a fleet owner using the app day to day. Effort is a rough estimate.
 
-## High impact (26)
+## High impact (18)
 
 | Capability | Now | Effort | What to do |
 |---|---|---|---|
 | Edit an existing fuel transaction | Missing | half a day | Add updateFuelStop (replace lines in a transaction, re-run validateFuelPurchase, advance meters only forward) plus an Edit action on FuelStopRow that opens AddFuelStopSheet pre-filled. |
 | Filter fuel stops by unit, year, month, and specific date, with Clear filters | Missing | half a day | Add unit/year/month/date filters as URL search params, pass them to listFuelStops (WHERE on date and EXISTS on fuel_lines.equipment_id), and recompute the spend summary for the filtered set. |
 | See full fuel history (all stops, not just recent) | Partial | under 1 hour | Add 'Load more' or page links (cursor on date, createdAt), or combine with the date filters so older stops are reachable. |
-| Service Records page: every service record across the fleet, newest first, with Date / Unit / Service / Reading / Shop / Cost columns | Missing | half a day | Add a fleet-wide records query and a /records (Service history) page with a unit column linking to /equipment/[id]. Add it to the nav. Consider filters by unit and date range. |
-| Edit a service record (date, reading, service type, shop, cost, notes) with re-run of the duplicate check | Missing | half a day | Add `updateServiceRecord` to the store. Scope it by fleet, re-check duplicates with `excludeId`, and decide whether an edit should re-derive the schedule baseline. Add an action and an edit sheet that reuses the LogServiceSheet fields, opened from each… |
-| Delete a service record, with a confirmation that warns it cannot be undone | Missing | under 1 hour | Add a fleet-scoped `deleteServiceRecord` and an action. Put a swipe or inline 'Delete' on each record row with a confirm Sheet, following the 'Remove schedule item?' pattern in ScheduleItemActions.tsx:29-38. |
 | Gear color/style picker (Cyan, Steel, Amber, Stealth) for the background gears | Fixed (PR #11) | under 1 hour | Add a small client GearStyleSwitcher (radiogroup over GEAR_THEMES, labels Cyan/Steel/Amber/Stealth, calls setGearTheme, reads the saved value after hydration like ThemeSwitcher does). Mount it in an 'Appearance' card on /settings next to a theme picker.… |
 | Data export / backup download (JSON, optional AES-256 password, optional include-API-key toggle, show/hide password) | Missing | half a day | Add an owner-scoped GET /api/export that streams the fleet's equipment, schedules, service records and fuel as JSON, and optionally a CSV zip. Fleet-scope it via requireFleet. Expose it as an 'Export my data' button on /settings. Password encryption is… |
 | Account basics for production: password reset and account management | Missing | half a day | Before inviting paying users, add forgot/reset password using Neon Auth (Better Auth) email reset, a change-password form on /settings, and a password visibility toggle on the auth form. Put these alongside the planned admin page work. |
-| Edit a unit's details (unit number, year, make, model, engine, notes) | Missing | half a day | Add an EditEquipmentSheet opened from an Edit button in the unit page header. Reuse the AddEquipmentSheet fields plus notes. Call updateEquipmentAction and show its duplicate-unit message. Keep type read-only and explain why. |
-| Delete (remove) a unit, with confirmation | Missing | under 1 hour | Add a 'Remove unit' danger button and a confirm Sheet on the unit page that calls archiveEquipmentAction and redirects to /equipment. Make getEquipment, or the detail page, treat archived units as not found or read-only. |
-| Edit a service record | Missing | half a day | Add updateService to the store (re-running the duplicate check and baseline logic) and an EditServiceSheet opened from each record row, using SwipeRow like the schedule rows. |
-| Delete a service record, with confirmation | Missing | under 1 hour | Add deleteServiceRecord to the store and action, with a 'Delete record?' confirm Sheet on each record row. Decide whether to roll back a schedule baseline that this record set. |
-| Scanned service receipt photo saved with the service record and viewable later (thumbnail, tap to enlarge) | Missing | half a day | After logServiceAction succeeds, save the same resized file as a service_receipt attachment for the new record id and show a thumbnail in the service history row via /api/attachments/[id]. |
 | Fuel receipt photo saved with the fuel stop and viewable via a Receipt button | Missing | half a day | Save the resized photo as a fuel_receipt attachment after addFuelStopAction succeeds and add a Receipt link on FuelStopRow. |
 | Applying AI intervals replaces the unit's existing schedule after an explicit confirmation | Partial | half a day | Show the existing item count and offer 'Replace current schedule' vs 'Add alongside', with a confirm step. Skip or flag picked items whose name and category match an existing item. |
 | Platform admin: see every user and fleet | Built, PR #10 waiting on migration | a day or more | Set the owner's neon_auth.user.role to 'admin' out of band, once. Add `role` to SessionUser and a `requireAdmin()` guard that runs on the server for every admin page and action, not only in proxy.ts. Build /admin to list fleets joined to neon_auth.user:… |
@@ -35,7 +27,7 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Sign-in/sign-up page visual identity and hierarchy | Partial | half a day | Make /auth a split layout. The left or top panel reuses LogoMark, the wordmark, the grid background and GearsStage at low opacity, with 2-3 product bullets ('PM due by miles or days', 'Read odometers from a photo', 'AI diagnostics'). The right side holds… |
 | Landing page path to sign-up | Partial | under 1 hour | Make the primary CTA 'Start your fleet' linking to /auth/sign-up, add a secondary 'Sign in' button (the .landing-demo-btn styles), and add a small top-right 'Sign in' link. Show 'Open my fleet' only when a session exists, which can be checked server-side… |
 
-## Medium impact (48)
+## Medium impact (45)
 
 | Capability | Now | Effort | What to do |
 |---|---|---|---|
@@ -50,8 +42,6 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Fleet-wide Maintenance page listing every schedule item for every unit | Partial | half a day | Add a fleet-wide 'All services' view: a /maintenance route, or a toggle on the dashboard attention section. Feed it with buildWorkboard and include ok and disabled items. Put a nav entry in SECTIONS. |
 | Same-day duplicate service warning with Cancel / Save as separate entry / Update existing record | Partial | under 1 hour | Once record editing exists, add an 'Update existing record' button that opens it. Return the existing record's mileage/hours, shop and notes in `existing` so the owner can tell whether it is really a duplicate. |
 | Success confirmations (toasts) after logging a service, updating a reading, or deleting a record | Missing | under 1 hour | Add a small toast provider in AppShell and fire success messages such as 'Oil change logged for Unit 12' and 'Unit 12 updated to 234,567 mi'. The CSS already exists. |
-| Attach, replace, view or remove a receipt or invoice photo on a service record (with AI re-scan during edit) | Missing | half a day | After a successful logService, save the receipt photo as a `service_receipt` attachment. Show a thumbnail link through /api/attachments/[id] on the record row, and allow replace and remove from the edit sheet. |
-| See a service record's notes after saving | Missing | under 1 hour | Render r.notes under the record line, truncated with an expand, or show it in the edit sheet once that exists. |
 | Light / Dark / Auto theme switch (persisted) | Partial | under 1 hour | Change the CSS selector to '@media (prefers-color-scheme: light) { :root:not([data-theme]) {...} }', or set data-theme="system" instead of removing it. Add an Appearance card to /settings with ThemeSwitcher and the gear-style picker. |
 | Guided tour (multi-step newcomer walkthrough, auto-opens on first visit) | Missing | half a day | Rebuild it as a client modal reusing the Sheet focus-trap pattern and the ported .tutorial-* CSS. Rewrite the content for Torqueline: cloud fleet, dual-trigger PM, photo readings and AI diagnostics on Claude. Drop the offline/IndexedDB, Gemini and… |
 | Import backup (with encrypted-file unlock and pre-import diff review, merge or replace) | Missing | a day or more | Build a one-time 'Import from Fleet Pulse backup' for empty fleets only. Decrypt in the browser (port crypto.js), strip settings and API keys, preview counts, and commit server-side in one transaction. Defer merge mode. Lower priority than export unless… |
@@ -61,7 +51,6 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Unit photo (attach on add/edit, thumbnail on equipment cards, register and unit page) | Missing | a day or more | Add an 'equipment_photo' attachment kind and reuse PhotoButton plus the attachments route. Show the thumbnail on the list card, the register and the unit header, with a type icon as the fallback. |
 | VIN decode to auto-fill year/make/model/engine | Missing | half a day | Add a Decode button that calls a server action proxying NHTSA vPIC (free, no key) and fills year, make, model and engine. Show the old 'VIN must be 17 characters' and 'Decode failed' messages. |
 | Starting odometer/hour reading when adding a unit | Missing | under 1 hour | Add an optional 'Current odometer' / 'Engine hours' field (hidden for trailers). After create, call recordReadingAction with it, or accept it in createEquipment. |
-| Unit notes (enter on add/edit, shown on unit page) | Missing | under 1 hour | Add a Notes textarea to the add and edit sheets and render notes under the unit header. |
 | Unit page: service record history (notes, receipt image, count) | Partial | half a day | Render notes under each record and a count in the section heading. Save the receipt photo as a 'service_receipt' attachment when logging, then show a thumbnail that opens full size, matching the fuel receipts. |
 | AI maintenance interval lookup and apply | Partial | half a day | Offer 'Replace current schedule' or 'Add alongside', with the replace confirmation. Render vehicleIdentified, the notes and per-item source_detail. Add select-all, and report `skipped` after saving. |
 | Dashboard header quick actions: 'Update readings' and 'Log service' | Missing | half a day | Add 'Update reading' and 'Log service' header buttons that open a unit picker, then the existing ReadingSheet or LogServiceSheet. |
@@ -88,7 +77,7 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Paused-account page tells the user how to get back in (contact or pay) | Partial | under 1 hour | Add a mailto support address now, and later a 'Update payment' link once Stripe exists. Otherwise a paused customer has no way to reach you. |
 | Notes and description fields grow as you type (multi-line text stays visible) | Missing | under 1 hour | Use `field-sizing: content` with a min/max height and overflow-y:auto (or port the auto-size hook), and delete the dead .textarea-measure CSS. Check in the browser that a multi-line symptom stays readable. |
 
-## Low impact (34)
+## Low impact (33)
 
 | Capability | Now | Effort | What to do |
 |---|---|---|---|
@@ -110,7 +99,6 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Unit page: PM schedule list | Partial | under 1 hour | Pass description and lastServiceMileage/Hours through toBoardSchedule and show them in the row's secondary line. |
 | Set up a starter schedule for a unit with none | Partial | under 1 hour | For units with only paused items, change the dashboard row to 'All items paused' with a link to the unit, or have the button resume the items. Show a message when added is 0. |
 | Unit cost panel (service, fuel, total, cost per mile/hour) | Partial | under 1 hour | Show the rate to at least 3 or 4 decimals, and restore the basis sentence and the null-case guidance using costs.baseline, costs.end and costs.firstDate. |
-| Unit page header: identity, VIN, reading freshness | Partial | under 1 hour | Render the VIN in mono under the make/model line and reuse the `staleness` badge markup from the dashboard register. |
 | Unit not found state | Partial | under 1 hour | Add src/app/(app)/equipment/[id]/not-found.tsx with 'Unit not found' and a link back to /equipment. |
 | Equipment list page (cards, open unit, add, empty state) | Partial | under 1 hour | Add the type to the secondary line and the staleness color class. Sort unit numbers naturally, for example with `ORDER BY` on a numeric-aware key or a localeCompare(..., {numeric:true}) client sort. |
 | Demo fleet mode on the dashboard (demo banner, guided demo tasks, reset/seed sample fleet) | Missing | a day or more | Decide explicitly. Either mark it intentionally deferred, or add a 'Load sample fleet' action for empty accounts that inserts a few units, schedules and records into the user's fleet. |

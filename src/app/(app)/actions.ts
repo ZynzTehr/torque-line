@@ -7,7 +7,9 @@ import { guarded } from "@/server/guarded";
 import { archiveEquipment, createEquipment, updateEquipment, type EquipmentInput } from "@/server/equipmentStore";
 import { recordReading, type ReadingInput } from "@/server/readingsStore";
 import { addSchedule, applyDefaultSchedule, deleteSchedule, updateSchedule, type ScheduleInput } from "@/server/scheduleStore";
-import { logService, type ServiceInput } from "@/server/serviceStore";
+import { deleteServiceRecord, logService, updateServiceRecord, type ServiceEditInput, type ServiceInput } from "@/server/serviceStore";
+import { deleteAttachments, listAttachments, saveAttachment } from "@/server/attachmentsStore";
+import { neonObjectStore } from "@/server/objectStore";
 import { addFuelStop, deleteFuelStop, type FuelStopInput } from "@/server/fuelStore";
 
 /**
@@ -50,7 +52,49 @@ export async function recordReadingAction(input: Omit<ReadingInput, "source" | "
 export async function logServiceAction(input: ServiceInput) {
   return withFleet(async (actor) => {
     const r = await logService(getDb(), actor, input);
-    return r.ok ? { ok: true as const } : r;
+    return r.ok ? { ok: true as const, id: r.record.id } : r;
+  });
+}
+
+export async function updateServiceRecordAction(id: string, input: ServiceEditInput) {
+  return withFleet(async (actor) => {
+    const r = await updateServiceRecord(getDb(), actor, id, input);
+    return r.ok ? { ok: true as const, id: r.record.id } : r;
+  });
+}
+
+export async function deleteServiceRecordAction(id: string) {
+  return withFleet(async ({ fleetId }) => {
+    const r = await deleteServiceRecord(getDb(), fleetId, id);
+    if (r.ok) await deleteAttachments(getDb(), await neonObjectStore(), fleetId, { kind: "service_receipt", parentId: id });
+    return r;
+  });
+}
+
+const RECEIPT_KINDS = ["service_receipt", "fuel_receipt"] as const;
+
+/** Save a receipt photo on a service record or fuel stop, replacing the one it had. */
+export async function attachReceiptAction(form: FormData) {
+  return withFleet(async (actor) => {
+    const kind = RECEIPT_KINDS.find((k) => k === form.get("kind"));
+    const parentId = String(form.get("parentId") ?? "");
+    const photo = form.get("photo");
+    if (!kind || !(photo instanceof File)) return { ok: false as const, code: "invalid" as const, message: "Choose a receipt photo." };
+    const db = getDb();
+    const store = await neonObjectStore();
+    const saved = await saveAttachment(db, store, actor, { kind, parentId, bytes: new Uint8Array(await photo.arrayBuffer()), contentType: photo.type });
+    if (!saved.ok) return saved;
+    for (const old of await listAttachments(db, actor.fleetId, kind, parentId)) {
+      if (old.id !== saved.attachment.id) await deleteAttachments(db, store, actor.fleetId, { id: old.id });
+    }
+    return { ok: true as const };
+  });
+}
+
+export async function removeAttachmentAction(id: string) {
+  return withFleet(async ({ fleetId }) => {
+    const removed = await deleteAttachments(getDb(), await neonObjectStore(), fleetId, { id });
+    return removed ? { ok: true as const } : { ok: false as const, code: "not-found" as const, message: "That receipt wasn't found." };
   });
 }
 

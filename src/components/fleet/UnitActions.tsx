@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { applyDefaultScheduleAction } from "@/app/(app)/actions";
+import { applyDefaultScheduleAction, archiveEquipmentAction } from "@/app/(app)/actions";
+import { Sheet } from "@/components/ui/Sheet";
 import { SwipeRow } from "@/components/ui/SwipeRow";
 import type { BoardEquipment, BoardSchedule } from "@/domain/workboard";
-import { AddEquipmentSheet } from "./AddEquipmentSheet";
+import { AddEquipmentSheet, type EditableUnit } from "./AddEquipmentSheet";
 import { LogServiceSheet } from "./LogServiceSheet";
 import { ReadingSheet } from "./ReadingSheet";
 
@@ -75,5 +76,39 @@ export function ApplyScheduleButton({ equipmentId }: { equipmentId: string }) {
       }}>Set up schedule</button>
       {error && <span role="alert" className="text-danger text-xs">{error}</span>}
     </div>
+  );
+}
+
+/** Edit a unit's details, or remove it from the fleet after confirmation. */
+export function UnitManage({ unit }: { unit: EditableUnit }) {
+  const router = useRouter();
+  const [sheet, setSheet] = useState<"edit" | "remove" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSheet("edit")}>Edit unit</button>
+        <button type="button" className="btn btn-ghost btn-sm text-danger" onClick={() => setSheet("remove")}>Remove unit</button>
+      </div>
+      {error && <p role="alert" className="text-danger text-xs">{error}</p>}
+      <AddEquipmentSheet existing={unit} open={sheet === "edit"} onClose={() => setSheet(null)} />
+      <Sheet open={sheet === "remove"} onClose={() => setSheet(null)} title={`Remove unit ${unit.unitNumber}?`}
+        footer={<>
+          <button type="button" className="btn btn-ghost" onClick={() => setSheet(null)}>Keep it</button>
+          <button type="button" className="btn btn-danger" disabled={pending} onClick={async () => {
+            setPending(true);
+            const r = await archiveEquipmentAction(unit.id);
+            setPending(false);
+            if (!r.ok) { setError(r.message); setSheet(null); return; }
+            router.push("/equipment");
+          }}>Remove unit</button>
+        </>}>
+        <p className="text-secondary text-sm">
+          Unit {unit.unitNumber} leaves the equipment list, the workboard, and the fuel form, and its unit number becomes free to reuse.
+          Its service and fuel history stays in the Records and Fuel pages.
+        </p>
+      </Sheet>
+    </>
   );
 }

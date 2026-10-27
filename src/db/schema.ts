@@ -85,7 +85,8 @@ export const equipment = pgTable("equipment", {
   updatedAt: updatedAt(),
 }, (t) => [
   unique("equipment_fleet_id").on(t.fleetId, t.id),
-  uniqueIndex("equipment_fleet_unit").on(t.fleetId, t.normalizedUnitNumber),
+  // Removed (archived) units keep their history but free their unit number for reuse.
+  uniqueIndex("equipment_fleet_unit").on(t.fleetId, t.normalizedUnitNumber).where(sql`${t.archivedAt} is null`),
   check("equipment_readings_nonneg", sql`coalesce(${t.currentMileage}, 0) >= 0 and coalesce(${t.currentHours}, 0) >= 0`),
 ]);
 
@@ -143,6 +144,8 @@ export const serviceRecords = pgTable("service_records", {
   equipmentId: uuid("equipment_id").notNull(),
   date: date("date").notNull(),
   serviceType: text("service_type").notNull(),
+  /** The schedule item this service completed, so editing or deleting the record can recompute its baseline. */
+  scheduleId: uuid("schedule_id").references(() => maintenanceSchedules.id, { onDelete: "set null" }),
   mileage: integer("mileage"),
   hours: integer("hours"),
   cost: money("cost"),

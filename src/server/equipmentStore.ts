@@ -37,11 +37,14 @@ export async function listEquipment(db: AppDb, fleetId: string): Promise<Equipme
     .orderBy(asc(schema.equipment.normalizedUnitNumber));
 }
 
-/** Null when the id is unknown or belongs to another fleet; the two are indistinguishable by design. */
+/**
+ * Null when the id is unknown, belongs to another fleet, or was removed; the cases are indistinguishable by design.
+ * Removed units keep their service and fuel history but accept nothing new.
+ */
 export async function getEquipment(db: AppDb, fleetId: string, id: string): Promise<EquipmentRow | null> {
   if (!z.uuid().safeParse(id).success) return null;
   const [row] = await db.select().from(schema.equipment)
-    .where(and(eq(schema.equipment.fleetId, fleetId), eq(schema.equipment.id, id)));
+    .where(and(eq(schema.equipment.fleetId, fleetId), eq(schema.equipment.id, id), isNull(schema.equipment.archivedAt)));
   return row ?? null;
 }
 

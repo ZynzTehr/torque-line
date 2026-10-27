@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import * as schema from "@/db/schema";
 import type { AppDb } from "./fleetStore";
@@ -67,4 +67,31 @@ export async function readAttachment(db: AppDb, store: ObjectStore, fleetId: str
   if (!row) return null;
   const object = await store.get(row.storageKey);
   return object ? { bytes: object.bytes, contentType: row.contentType } : null;
+}
+
+/** The newest attachment of `kind` for each parent, as parentId → attachment id. */
+export async function latestAttachmentIds(db: AppDb, fleetId: string, kind: AttachmentKind, parentIds: string[]) {
+  const ids = parentIds.filter(isUuid);
+  const latest = new Map<string, string>();
+  if (!ids.length) return latest;
+  const rows = await db.select({ id: schema.attachments.id, parentId: schema.attachments.parentId }).from(schema.attachments)
+    .where(and(eq(schema.attachments.fleetId, fleetId), eq(schema.attachments.kind, kind), inArray(schema.attachments.parentId, ids)))
+    .orderBy(desc(schema.attachments.createdAt));
+  for (const r of rows) if (!latest.has(r.parentId)) latest.set(r.parentId, r.id);
+  return latest;
+}
+
+/**
+ * Remove attachments: one by id, or every file of `kind` on one record. Rows go first, then objects;
+ * a leftover object is harmless, a row whose object is gone is not.
+ */
+export async function deleteAttachments(db: AppDb, store: ObjectStore, fleetId: string,
+  target: { id: string } | { kind: AttachmentKind; parentId: string }): Promise<number> {
+  const where = "id" in target
+    ? (isUuid(target.id) ? and(eq(schema.attachments.fleetId, fleetId), eq(schema.attachments.id, target.id)) : null)
+    : (isUuid(target.parentId) ? and(eq(schema.attachments.fleetId, fleetId), eq(schema.attachments.kind, target.kind), eq(schema.attachments.parentId, target.parentId)) : null);
+  if (!where) return 0;
+  const removed = await db.delete(schema.attachments).where(where).returning({ storageKey: schema.attachments.storageKey });
+  for (const r of removed) await store.delete(r.storageKey).catch(() => undefined);
+  return removed.length;
 }
