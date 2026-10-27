@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Runs against a real Neon branch: LIVE=1 npx playwright test live --project=desktop
 // Creates real users; point .env.local at a throwaway branch (neon checkout <name> --create) first.
+// Against the deployed site: add E2E_BASE_URL=https://torque-line.vercel.app, then delete the e2e+…@example.com users and their fleets.
 test.skip(!process.env.LIVE, "set LIVE=1 to run against a real Neon branch");
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
