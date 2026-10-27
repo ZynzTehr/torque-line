@@ -76,6 +76,8 @@ function AccountRow({ row, isSelf }: { row: AdminFleetRow; isSelf: boolean }) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate font-semibold">{row.ownerEmail ?? "Unknown email"}</span>
             <span className={`badge ${row.status === "active" ? "badge-green" : "badge-red"}`}>{row.status === "active" ? "Active" : "Inactive"}</span>
+            {row.account?.state === "closed" && <span className="badge badge-yellow">Closed by owner</span>}
+            {row.account?.state === "deletion_scheduled" && <span className="badge badge-red">Deletes {fmtDate(row.account.purgeAfter)}</span>}
             {isSelf && <span className="badge badge-neutral">You</span>}
           </div>
           <div className="text-secondary mt-1 text-xs">

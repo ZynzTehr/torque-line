@@ -25,6 +25,11 @@ export async function endAllSessions(db: AppDb, userId: string): Promise<number>
   return rows.length;
 }
 
+/** Ends one session by its token. */
+export async function endSession(db: AppDb, sessionToken: string): Promise<void> {
+  await db.execute(sql`delete from neon_auth.session where token = ${sessionToken}`);
+}
+
 /** Whether a session still exists and hasn't expired. Ending one (sign-out, a reset, a password change) deletes its row. */
 export async function sessionIsLive(db: AppDb, sessionToken: string): Promise<boolean> {
   const rows = rowsOf<{ live: number }>(await db.execute(sql`
