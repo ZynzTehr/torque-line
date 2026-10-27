@@ -1,20 +1,50 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AiTransport } from "@/ai/structured";
-import { lookupIntervals, readFuelReceipt, readMeter, imageBlock } from "@/ai/tasks";
+import { lookupIntervals, readFuelReceipt, readMeter, readServiceReceipt, imageBlock } from "@/ai/tasks";
 
 const fake = (parsed: unknown): AiTransport & { last: () => Record<string, unknown> } => {
   const calls: Record<string, unknown>[] = [];
   return {
-    parse: vi.fn(async (p) => { calls.push(p); return { stop_reason: "end_turn", parsed_output: parsed, model: "claude-opus-5-5" }; }),
+    parse: vi.fn(async (p) => { calls.push(p); return { stop_reason: "end_turn", parsed_output: parsed, model: p.model as string }; }),
     last: () => calls.at(-1)!,
   };
 };
 const img = imageBlock("image/jpeg", "AAAA");
 
+describe("model per task", () => {
+  const meter = { is_meter: true, value: 1, confidence: "high", notes: "" };
+  const service = { is_service_record: true, unit_number: null, date: null, mileage: null, service_type: null, shop_name: null, cost: null, notes: null, confidence: "high" };
+  const fuel = { is_fuel_receipt: true, date: null, odometer: null, hours: null, location: null, notes: null, confidence: "high", items: [] };
+  const intervals = { vehicle_identified: true, overall_confidence: "high", notes: "", items: [] };
+
+  it.each([
+    ["meter photos", meter, (t: AiTransport) => readMeter(t, img, "odometer")],
+    ["service receipts", service, (t: AiTransport) => readServiceReceipt(t, img)],
+    ["fuel receipts", fuel, (t: AiTransport) => readFuelReceipt(t, img)],
+  ])("reads %s on Haiku 5.5", async (_, parsed, read) => {
+    const t = fake(parsed);
+    expect(await read(t)).toMatchObject({ ok: true, model: "claude-haiku-5-5" });
+    expect(t.last().model).toBe("claude-haiku-5-5");
+  });
+
+  it("keeps interval lookups on Opus 5.5", async () => {
+    const t = fake(intervals);
+    expect(await lookupIntervals(t, { type: "tractor" })).toMatchObject({ ok: true, model: "claude-opus-5-5" });
+  });
+
+  it("applies the meter guardrails to the Opus retry's answer too", async () => {
+    let n = 0;
+    const t: AiTransport = { parse: vi.fn(async (p) => (++n === 1
+      ? { stop_reason: "refusal", parsed_output: null, model: p.model as string }
+      : { stop_reason: "end_turn", parsed_output: { is_meter: true, value: 99_999_999, confidence: "high", notes: "" }, model: p.model as string })) };
+    expect(await readMeter(t, img, "odometer")).toEqual({ ok: true, model: "claude-opus-5-5", data: { value: null, confidence: "high", notes: "" } });
+  });
+});
+
 describe("readMeter", () => {
   it("returns the reading at low effort, with the image before the instruction", async () => {
     const t = fake({ is_meter: true, value: 482150, confidence: "high", notes: "Clear display" });
-    expect(await readMeter(t, img, "odometer")).toEqual({ ok: true, data: { value: 482150, confidence: "high", notes: "Clear display" }, model: "claude-opus-5-5" });
+    expect(await readMeter(t, img, "odometer")).toEqual({ ok: true, data: { value: 482150, confidence: "high", notes: "Clear display" }, model: "claude-haiku-5-5" });
     const call = t.last() as { output_config: { effort: string }; messages: { content: { type: string }[] }[] };
     expect(call.output_config.effort).toBe("low");
     expect(call.messages[0].content.map((c) => c.type)).toEqual(["image", "text"]);
