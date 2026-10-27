@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { GearStyleSwitcher } from "@/components/shell/GearStyleSwitcher";
 import { SignOutButton } from "@/components/shell/SignOutButton";
+import Link from "next/link";
+import { getDb } from "@/db";
 import { getSessionUser, LOGIN_URL } from "@/lib/auth/server";
+import { isPlatformAdmin } from "@/server/adminStore";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -25,6 +28,9 @@ export default function Page() {
           <p className="text-secondary mb-3 text-sm">The finish of the gears behind every page. Light and dark themes are in the sidebar.</p>
           <GearStyleSwitcher />
         </section>
+        <Suspense fallback={null}>
+          <AdminLink />
+        </Suspense>
       </div>
     </>
   );
@@ -35,4 +41,18 @@ async function SignedInAs() {
   const user = await getSessionUser();
   if (!user) redirect(LOGIN_URL);
   return <p className="text-secondary mb-4 text-sm">Signed in as <strong className="text-fg">{user.email}</strong></p>;
+}
+
+/** Shown only to platform admins. */
+async function AdminLink() {
+  await connection();
+  const user = await getSessionUser();
+  if (!user || !(await isPlatformAdmin(getDb(), user.id))) return null;
+  return (
+    <section className="card mt-4 max-w-md" aria-labelledby="admin-heading">
+      <h3 id="admin-heading" className="mb-2">Platform admin</h3>
+      <p className="text-secondary mb-4 text-sm">See every account and turn access on or off.</p>
+      <Link className="btn btn-primary" href="/admin">Open admin</Link>
+    </section>
+  );
 }

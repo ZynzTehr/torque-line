@@ -25,6 +25,7 @@ export const diagnosticStatus = pgEnum("diagnostic_status", ["open", "resolved"]
 export const diagnosticRole = pgEnum("diagnostic_role", ["user", "assistant"]);
 export const likelihood = pgEnum("likelihood", ["high", "medium", "low"]);
 export const costTier = pgEnum("cost_tier", ["free", "low", "medium", "high"]);
+export const fleetStatus = pgEnum("fleet_status", ["active", "inactive"]);
 export const attachmentKind = pgEnum("attachment_kind", ["diagnostic_photo", "service_receipt", "fuel_receipt"]);
 
 /** MVP invariant: a user owns at most one fleet (unique owner). Multi-fleet access comes later through memberships. */
@@ -34,6 +35,20 @@ export const fleets = pgTable("fleets", {
   name: text("name").notNull(),
   timezone: text("timezone").notNull().default("America/Chicago"),
   aiDailyLimit: integer("ai_daily_limit").notNull().default(100),
+  createdAt: createdAt(),
+  /** Copied from the auth user on each visit, so the admin list needs no join into Neon Auth's schema. */
+  ownerEmail: text("owner_email"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  /** Set by a platform admin. An inactive fleet keeps its data but cannot use the app. */
+  status: fleetStatus("status").notNull().default("active"),
+  statusNote: text("status_note"),
+  statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
+  statusChangedBy: text("status_changed_by"),
+});
+
+/** Torqueline operators. Rows are added by hand (SQL), never through the app. */
+export const platformAdmins = pgTable("platform_admins", {
+  userId: text("user_id").primaryKey(),
   createdAt: createdAt(),
 });
 
