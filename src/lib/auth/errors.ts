@@ -22,7 +22,7 @@ export function authFailureMessage(error: unknown): string {
  * becomes bad_jwt, INVALID_PASSWORD becomes invalid_credentials) and replaces the message for mapped codes.
  */
 const codeOf = (error: unknown) => (isAuthApiError(error) ? error.code : undefined);
-const isRateLimited = (error: unknown) => isAuthApiError(error) && error.status === 429;
+export const isRateLimited = (error: unknown) => isAuthApiError(error) && error.status === 429;
 
 /** Sign-in was refused only because the email address hasn't been verified yet. */
 export function needsEmailVerification(error: unknown): boolean {

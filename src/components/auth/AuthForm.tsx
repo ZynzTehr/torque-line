@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 import { authFailureMessage, needsEmailVerification } from "@/lib/auth/errors";
-import { FORGOT_PASSWORD_URL, verifyEmailHref } from "@/lib/auth/routes";
+import { FORGOT_PASSWORD_URL } from "@/lib/auth/routes";
+import { handOffToVerify } from "@/lib/auth/verifyHandoff";
 import { BRAND } from "@/lib/brand";
 
 type Mode = "sign-in" | "sign-up";
@@ -34,14 +35,14 @@ export function AuthForm({ mode, notice }: { mode: Mode; notice?: ReactNode }) {
       }
       // With required verification on, sign-up creates the user but no session: go enter the emailed code.
       if (mode === "sign-up" && !result.data?.token) {
-        router.push(verifyEmailHref(email));
+        router.push(handOffToVerify(email));
         return;
       }
       router.push("/dashboard");
       router.refresh();
     } catch (caught) {
       if (needsEmailVerification(caught)) {
-        router.push(verifyEmailHref(email));
+        router.push(handOffToVerify(email));
         return;
       }
       console.error("Auth request failed", caught);
