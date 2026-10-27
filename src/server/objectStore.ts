@@ -17,14 +17,19 @@ let neonStore: ObjectStore | null = null;
 export async function neonObjectStore(): Promise<ObjectStore> {
   if (neonStore) return neonStore;
   if (!process.env.AWS_ENDPOINT_URL_S3) throw new Error("Object storage is not configured. Declare the bucket in neon.ts and run `neon deploy`.");
-  const [{ Files }, { neon }] = await Promise.all([import("files-sdk"), import("files-sdk/neon")]);
+  const [{ Files, FilesError }, { neon }] = await Promise.all([import("files-sdk"), import("files-sdk/neon")]);
   const files = new Files({ adapter: neon({ bucket: ATTACHMENTS_BUCKET }) });
   neonStore = {
     async put(key, bytes, contentType) { await files.upload(key, bytes, { contentType }); },
     async get(key) {
-      if (!(await files.exists(key))) return null;
-      const file = await files.download(key);
-      return { bytes: new Uint8Array(await file.arrayBuffer()), contentType: file.contentType };
+      // One round trip: a missing object comes back as NotFound. Transient provider errors are retried.
+      try {
+        const file = await files.download(key, { retries: 2 });
+        return { bytes: new Uint8Array(await file.arrayBuffer()), contentType: file.contentType };
+      } catch (error) {
+        if (error instanceof FilesError && error.code === "NotFound") return null;
+        throw error;
+      }
     },
     async delete(key) { await files.delete(key); },
   };
