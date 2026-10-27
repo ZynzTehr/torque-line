@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { Pool } from "@neondatabase/serverless";
 
 // Password reset, password change and email verification, against the e2e Neon branch only (see live.spec.ts for setup).
@@ -51,6 +51,16 @@ async function submitAuthForm(page: Page, button: string) {
   }
 }
 
+/**
+ * The app trusts a signed session cache cookie for a few minutes before asking the auth service again. Drop it, the
+ * way its expiry would, so the next request checks the session itself.
+ */
+async function dropSessionCache(context: BrowserContext) {
+  const kept = (await context.cookies()).filter((c) => !c.name.includes("session_data"));
+  await context.clearCookies();
+  await context.addCookies(kept);
+}
+
 async function signIn(page: Page, email: string, password: string) {
   await page.goto("/auth/sign-in");
   await page.getByLabel("Email").fill(email);
@@ -92,9 +102,14 @@ async function plantCode(email: string, before: string[], code: string) {
   await db.query(`update neon_auth.verification set value = $2 where id = $1`, [id, `${createHash("sha256").update(code).digest("base64url")}:0`]);
 }
 
-test("forgot password: neutral answer, reset by the emailed link, sign in with the new password", async ({ page, baseURL }) => {
+test("forgot password: neutral answer, reset by the emailed link, every device signed out, sign in with the new password", async ({ page, browser, baseURL }) => {
   const owner = person("reset");
   await createVerifiedUser(owner.email, owner.password, baseURL!);
+  // Someone already signed in with the old password, e.g. whoever it leaked to.
+  const elsewhere = await browser.newContext();
+  const other = await elsewhere.newPage();
+  await signIn(other, owner.email, owner.password);
+  await other.waitForURL("**/dashboard", { timeout: 30_000 });
 
   await page.goto("/auth/sign-in");
   await page.getByRole("link", { name: "Forgot password?" }).click();
@@ -121,7 +136,13 @@ test("forgot password: neutral answer, reset by the emailed link, sign in with t
   await page.getByLabel("Confirm new password", { exact: true }).fill(owner.newPassword);
   await page.getByRole("button", { name: "Save new password" }).click();
   await page.waitForURL("**/auth/sign-in?notice=password-reset");
-  await expect(page.getByRole("status")).toHaveText("Password updated. Sign in with your new password.");
+  await expect(page.getByRole("status")).toHaveText("Password updated and all devices signed out. Sign in with your new password.");
+
+  // The reset ended the other device's session.
+  await dropSessionCache(elsewhere);
+  await other.goto("/dashboard");
+  await other.waitForURL("**/auth/sign-in**");
+  await elsewhere.close();
 
   await signIn(page, owner.email, owner.password);
   await expect(page.locator("#auth-error")).toBeVisible();
@@ -164,14 +185,13 @@ test("change password in settings signs out other devices only", async ({ browse
   await sheet.getByRole("button", { name: "Change password" }).click();
   await expect(sheet).toBeHidden();
   await expect(page.getByText("Password changed. Other devices are signed out.")).toBeVisible();
+  // Both devices are checked against the session itself, not the cache cookie: this one stays signed in…
+  await dropSessionCache(here);
   await page.reload();
   await expect(page.getByText(`Signed in as ${owner.email}`)).toBeVisible();
 
-  // The other device's session is revoked. Its signed session cache cookie can outlive that for a few minutes,
-  // so drop the cache the way its expiry would and check the session itself.
-  const kept = (await elsewhere.cookies()).filter((c) => !c.name.includes("session_data"));
-  await elsewhere.clearCookies();
-  await elsewhere.addCookies(kept);
+  // …and the other one is signed out.
+  await dropSessionCache(elsewhere);
   await other.goto("/dashboard");
   await other.waitForURL("**/auth/sign-in**");
 
@@ -213,30 +233,48 @@ test.describe("email verification", () => {
     }
   }
 
-  test("an unverified owner enters the emailed code after sign-up or sign-in and lands in the app", async ({ page, baseURL }) => {
+  test("an unverified owner enters the emailed code after sign-up or sign-in and lands in the app", async ({ page, browser, baseURL }) => {
     const owner = person("verify");
+    let sends = 0;
+    page.on("request", (r) => { if (r.url().includes("/email-otp/send-verification-otp")) sends++; });
     await withVerificationRequired(baseURL!, async () => {
       await page.goto("/auth/sign-up");
       await page.getByLabel("Your name").fill("Vera Verify");
       await page.getByLabel("Email").fill(owner.email);
       await page.getByLabel("Password").fill(owner.password);
       await submitAuthForm(page, "Create account");
-      await page.waitForURL(`**/auth/verify-email?email=${encodeURIComponent(owner.email)}`);
+      // The address is handed over in the tab, never in the URL.
+      await page.waitForURL((url) => url.pathname === "/auth/verify-email" && url.search === "");
       await expect(page.getByRole("status")).toContainText(`We sent a 6-digit code to ${owner.email}`);
       await expect(page.getByRole("button", { name: /Send a new code in \d+s/ })).toBeDisabled();
+      expect(sends).toBe(1);
       await page.getByLabel("Code").fill("000000");
       await page.getByRole("button", { name: "Verify email" }).click();
       await expect(page.getByText("That code is wrong. Check the email and try again.")).toBeVisible();
 
+      // A reload keeps the code already on its way instead of sending (and invalidating it with) another.
+      await page.reload();
+      await expect(page.getByRole("status")).toContainText(`We sent a 6-digit code to ${owner.email}`);
+      await expect(page.getByRole("button", { name: /Send a new code in \d+s/ })).toBeDisabled();
+      expect(sends).toBe(1);
+
+      // A cold link to the page can't send anyone a code.
+      const stranger = await browser.newContext();
+      const cold = await stranger.newPage();
+      let coldSends = 0;
+      cold.on("request", (r) => { if (r.url().includes("/email-otp/send-verification-otp")) coldSends++; });
+      await cold.goto("/auth/verify-email");
+      await expect(cold.getByText("Sign in first and we'll send a code to your email.")).toBeVisible();
+      expect(coldSends).toBe(0);
+      await stranger.close();
+
       // Leave, then sign in: the unverified account is sent back to enter a fresh code.
-      let before = await otpRowIds(owner.email);
       await signIn(page, owner.email, owner.password);
-      await page.waitForURL("**/auth/verify-email?**");
+      await page.waitForURL("**/auth/verify-email");
       await expect(page.getByRole("status")).toContainText("We sent a 6-digit code");
 
       // Resend after the cooldown; the newest code is the one that works.
-      await plantCode(owner.email, before, "111111");
-      before = await otpRowIds(owner.email);
+      const before = await otpRowIds(owner.email);
       const resend = page.getByRole("button", { name: "Send a new code" });
       await expect(resend).toBeEnabled({ timeout: 75_000 });
       await resend.click();
