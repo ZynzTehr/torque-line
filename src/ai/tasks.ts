@@ -5,7 +5,7 @@ import { checkMonotonicity, PERSONA_LEAK, sanitizePromptInput, validateMaintenan
 import { normalizeFuelTransactionReceipt, validDate } from "@/domain/fuel";
 import { MAX_HOURS, MAX_ODOMETER } from "@/domain/readings";
 import type { EquipmentType } from "@/domain/types";
-import { askStructured, type AiResult, type AiTransport } from "./structured";
+import { askStructured, READ_MODEL, type AiResult, type AiTransport } from "./structured";
 
 // Prompts ported from ZynzTehr/fleet-pulse@88e9f01 src/js/services/ai.js. Output format instructions are gone:
 // structured outputs enforce the schema, and every result is validated again here.
@@ -34,7 +34,7 @@ Ignore tenths of an hour. If the screen only shows box temperature or setpoint, 
 export async function readMeter(t: AiTransport | null, image: ImageBlock, meter: "odometer" | "hours"):
   Promise<AiResult<{ value: number | null; confidence: "high" | "medium" | "low"; notes: string }>> {
   const r = await askStructured(t, {
-    schema: meterSchema, effort: "low", maxTokens: 2000,
+    schema: meterSchema, model: READ_MODEL, effort: "low", maxTokens: 2000,
     system: `You read vehicle meters from photos for a fleet maintenance app. ${SHARED}`,
     content: [image, text(meter === "hours" ? HOURS_PROMPT : ODOMETER_PROMPT)],
   });
@@ -55,7 +55,7 @@ const serviceReceiptSchema = z.object({
 
 export async function readServiceReceipt(t: AiTransport | null, image: ImageBlock) {
   const r = await askStructured(t, {
-    schema: serviceReceiptSchema, effort: "medium", maxTokens: 4000,
+    schema: serviceReceiptSchema, model: READ_MODEL, effort: "medium", maxTokens: 4000,
     system: `You extract fields from vehicle service invoices and receipts for a fleet maintenance app. ${SHARED}`,
     content: [image, text("Extract the service date, odometer mileage, service performed, shop name, total cost, and notes. If this is not a service record, set is_service_record to false.")],
   });
@@ -92,7 +92,7 @@ If this is not a fuel receipt, set is_fuel_receipt to false and items to an empt
 
 export async function readFuelReceipt(t: AiTransport | null, image: ImageBlock) {
   const r = await askStructured(t, {
-    schema: fuelReceiptSchema, effort: "medium", maxTokens: 4000,
+    schema: fuelReceiptSchema, model: READ_MODEL, effort: "medium", maxTokens: 4000,
     system: `You extract fuel purchases from truck stop receipts for a fleet maintenance app. ${SHARED}`,
     content: [image, text(FUEL_PROMPT)],
   });
