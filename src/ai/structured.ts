@@ -14,8 +14,8 @@ export type Effort = "low" | "medium" | "high";
 type Content = Anthropic.Beta.Messages.BetaContentBlockParam[];
 type Message = Anthropic.Beta.Messages.BetaMessageParam;
 
-/** Per-request overrides of the client's timeout and retry count. */
-export type RequestLimits = { timeout?: number; maxRetries?: number };
+/** Per-request overrides of the client's timeout and retry count, and a signal that ends the request early. */
+export type RequestLimits = { timeout?: number; maxRetries?: number; signal?: AbortSignal };
 
 /** The slice of the SDK this module uses, so tests can substitute a fake. */
 export interface AiTransport {
@@ -46,29 +46,42 @@ export function anthropicTransport(): AiTransport | null {
 
 type AskOptions<S extends z.ZodType> = {
   schema: S; system: string; content?: Content; messages?: Message[]; effort: Effort; maxTokens?: number; model?: AiModel;
+  /**
+   * Haiku only: false for a valid answer that still means "couldn't read it" (no value, wrong kind of
+   * photo), which Opus is then asked too. If Opus fails outright, Haiku's answer stands.
+   */
+  accept?: (data: z.infer<S>) => boolean;
+  /** Ends every attempt, including the SDK's retry waits. Defaults to TOTAL_BUDGET_MS from the call. */
+  signal?: AbortSignal;
 };
 
 /**
- * Haiku's attempt gets a tight budget and the Opus retry one fewer SDK retry, so the whole chain
- * (about 61s + 181s worst case) still finishes inside the server function's 300s limit and the
- * user sees "enter it manually" instead of a dead request. Photo reads take Haiku a few seconds.
+ * Haiku's attempt gets a tight budget and the Opus retry one fewer SDK retry. Per-attempt timeouts
+ * don't cover the SDK's wait on a server's retry-after header, so the whole call also runs under one
+ * deadline (and Haiku under its own share of it). That keeps it inside the server function's 300s
+ * limit, so the user sees "enter it manually" instead of a dead request. Photo reads take Haiku a few seconds.
  */
 export const HAIKU_LIMITS: RequestLimits = { timeout: 30_000, maxRetries: 1 };
 export const RETRY_LIMITS: RequestLimits = { maxRetries: 1 };
+export const TOTAL_BUDGET_MS = 250_000;
+export const HAIKU_BUDGET_MS = 75_000;
 
 /**
  * Ask Claude for output that must match `schema`. The model's answer is untrusted: it is parsed,
  * validated again with Zod, and every non-answer (refusal, truncation, invalid JSON, network) becomes
  * a typed failure the UI can turn into "enter it manually". Haiku has no server-side fallback, so any
- * Haiku non-answer is asked once more on Opus with the same prompt and schema.
+ * Haiku non-answer, or an answer `accept` rejects, is asked once more on Opus with the same prompt and schema.
  */
 export async function askStructured<S extends z.ZodType>(t: AiTransport | null, opts: AskOptions<S>): Promise<AiResult<z.infer<S>>> {
   if (!t) return { ok: false, code: "not-configured" };
+  const signal = opts.signal ?? AbortSignal.timeout(TOTAL_BUDGET_MS);
   const model = opts.model ?? AI_MODEL;
-  if (model === AI_MODEL) return askOnce(t, model, opts);
-  const first = await askOnce(t, model, opts, HAIKU_LIMITS);
-  if (first.ok) return first;
-  return askOnce(t, AI_MODEL, opts, RETRY_LIMITS);
+  if (model === AI_MODEL) return askOnce(t, model, opts, { signal });
+  const first = await askOnce(t, model, opts, { ...HAIKU_LIMITS, signal: AbortSignal.any([signal, AbortSignal.timeout(HAIKU_BUDGET_MS)]) });
+  if (first.ok && (opts.accept?.(first.data) ?? true)) return first;
+  if (signal.aborted) return first;
+  const retry = await askOnce(t, AI_MODEL, opts, { ...RETRY_LIMITS, signal });
+  return !retry.ok && first.ok ? first : retry;
 }
 
 async function askOnce<S extends z.ZodType>(t: AiTransport, model: AiModel, opts: AskOptions<S>, limits?: RequestLimits): Promise<AiResult<z.infer<S>>> {
