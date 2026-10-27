@@ -60,7 +60,7 @@ function namePhotos(d: Loaded): Photo[] {
 }
 
 /** The CSVs and fleet.json, referencing only the photos that actually made it into the zip. */
-function dataFiles(d: Loaded, included: Photo[], missing: string[], exportedAt: Date): [string, string][] {
+function dataFiles(d: Loaded, included: Photo[], missing: string[], unreadable: string[], exportedAt: Date): [string, string][] {
   const unitNo = new Map(d.units.map((u) => [u.id, u.unitNumber]));
   const scheduleName = new Map(d.schedules.map((s) => [s.id, s.name]));
   const photosOf = new Map<string, string[]>();
@@ -112,7 +112,8 @@ function dataFiles(d: Loaded, included: Photo[], missing: string[], exportedAt: 
   const json = {
     formatVersion: EXPORT_FORMAT_VERSION,
     exportedAt: exportedAt.toISOString(),
-    conventions: "Timestamps are ISO 8601 UTC; dates are YYYY-MM-DD. Money and gallons are decimal strings. Photo paths are relative to this file.",
+    conventions: "Timestamps are ISO 8601 UTC; dates are YYYY-MM-DD. Money and gallons are decimal strings. Photo paths are relative to this file. " +
+      "missingFiles are photos whose file is gone from storage; unreadableFiles are photos storage would not return this time, so exporting again may include them.",
     fleet: { id: d.fleet.id, name: d.fleet.name, timezone: d.fleet.timezone, createdAt: iso(d.fleet.createdAt) },
     units: d.units.map((u) => ({
       id: u.id, unitNumber: u.unitNumber, type: u.type, year: u.year, make: u.make, model: u.model, engine: u.engineSize, vin: u.vin,
@@ -150,6 +151,7 @@ function dataFiles(d: Loaded, included: Photo[], missing: string[], exportedAt: 
       conversation: d.turns.filter((t) => t.sessionId === s.id).map((t) => ({ seq: t.seq, role: t.role, content: t.content, createdAt: iso(t.createdAt) })),
     })),
     missingFiles: missing,
+    unreadableFiles: unreadable,
   };
 
   return [
@@ -158,42 +160,80 @@ function dataFiles(d: Loaded, included: Photo[], missing: string[], exportedAt: 
   ];
 }
 
+/** What one export did, for the operator's log. Counts and error codes only: no keys, names or file paths. */
+export interface ExportSummary { photos: number; missing: number; unreadable: number; errors: string[]; bytes: number; ms: number; cancelled: boolean }
+
+/** Photos fetched ahead of the client's reads, so storage latency overlaps the download. Bounds memory to a few photos. */
+const PREFETCH = 4;
+type Fetched = { photo: Photo; bytes: Uint8Array | null; error?: string };
+
+const errorCode = (error: unknown) => {
+  const e = error as { name?: string; code?: string } | null;
+  return `${e?.name ?? typeof error}${e?.code ? ` (${e.code})` : ""}`;
+};
+
+/** One photo's bytes, null when the object is gone, or an error code after a second failed try. Never rejects. */
+async function fetchPhoto(store: ObjectStore, photo: Photo): Promise<Fetched> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const object = await store.get(photo.storageKey);
+      return { photo, bytes: object?.bytes ?? null };
+    } catch (error) {
+      if (attempt >= 2) return { photo, bytes: null, error: errorCode(error) };
+    }
+  }
+}
+
 /**
- * The fleet's whole history as a zip stream: receipts/ first (one photo in memory at a time, pulled only as
- * fast as the client reads), then the CSVs and fleet.json. A photo row whose object is gone from the bucket
- * is listed in fleet.json `missingFiles` instead of being referenced.
+ * The fleet's whole history as a zip stream: receipts/ first (a few photos fetched ahead, pulled only as fast
+ * as the client reads), then the CSVs and fleet.json. A photo whose object is gone from the bucket is listed in
+ * fleet.json `missingFiles`, and one storage would not return in `unreadableFiles`; neither is referenced by a
+ * CSV, and neither stops the rest of the export.
  */
-export async function exportFleet(db: AppDb, store: ObjectStore, fleetId: string, now = new Date()): Promise<ReadableStream<Uint8Array>> {
+export async function exportFleet(db: AppDb, store: ObjectStore, fleetId: string, now = new Date(),
+  onDone?: (summary: ExportSummary) => void): Promise<ReadableStream<Uint8Array>> {
+  const started = Date.now();
   const loaded = await loadFleet(db, fleetId);
   const photos = namePhotos(loaded);
   const included: Photo[] = [];
   const missing: string[] = [];
+  const unreadable: string[] = [];
+  const errors: string[] = [];
+  const ahead: Promise<Fetched>[] = [];
   let next = 0;
+  let bytes = 0;
   let zip: Zip;
+  const fill = () => { while (ahead.length < PREFETCH && next < photos.length) ahead.push(fetchPhoto(store, photos[next++])); };
+  const done = (cancelled: boolean) => onDone?.({
+    photos: included.length, missing: missing.length, unreadable: unreadable.length, errors, bytes, ms: Date.now() - started, cancelled,
+  });
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
       zip = new Zip((error, chunk, final) => {
         if (error) return controller.error(error);
+        bytes += chunk.byteLength;
         controller.enqueue(chunk);
-        if (final) controller.close();
+        if (final) { controller.close(); done(false); }
       });
     },
     async pull() {
-      // Each pull must enqueue something, or the stream stalls: skip past missing objects in one call.
-      while (next < photos.length) {
-        const photo = photos[next++];
-        const object = await store.get(photo.storageKey);
-        if (!object) { missing.push(photo.path); continue; }
+      // Each pull must enqueue something, or the stream stalls: skip past missing and unreadable objects in one call.
+      fill();
+      while (ahead.length) {
+        const { photo, bytes: body, error } = await ahead.shift()!;
+        fill();
+        if (error) { unreadable.push(photo.path); errors.push(error); continue; }
+        if (!body) { missing.push(photo.path); continue; }
         const entry = new ZipPassThrough(photo.path); // photos are already compressed
         entry.mtime = now;
         zip.add(entry);
-        entry.push(object.bytes, true);
+        entry.push(body, true);
         included.push(photo);
         return;
       }
       const encoder = new TextEncoder();
-      for (const [name, body] of dataFiles(loaded, included, missing, now)) {
+      for (const [name, body] of dataFiles(loaded, included, missing, unreadable, now)) {
         const entry = new ZipDeflate(name, { level: 6 });
         entry.mtime = now;
         zip.add(entry);
@@ -201,5 +241,6 @@ export async function exportFleet(db: AppDb, store: ObjectStore, fleetId: string
       }
       zip.end();
     },
+    cancel() { done(true); },
   });
 }

@@ -3,8 +3,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
 import { saveAttachment } from "@/server/attachmentsStore";
-import { exportFleet } from "@/server/exportStore";
-import { memoryObjectStore } from "@/server/objectStore";
+import { exportFleet, type ExportSummary } from "@/server/exportStore";
+import { memoryObjectStore, type ObjectStore } from "@/server/objectStore";
 import { createTestDb, seedFleet, type TestDb } from "../helpers/testDb";
 
 let db: TestDb;
@@ -164,5 +164,65 @@ describe("owner data export", () => {
     expect(json.readings).toHaveLength(1);
     expect(json.scheduleItems).toHaveLength(1);
     expect(json.missingFiles).toEqual(["receipts/2026-10-14 T9 diagnosis lights flicker (2).jpg"]);
+    expect(json.unreadableFiles).toEqual([]);
+  });
+});
+
+describe("export when storage misbehaves", () => {
+  const unzipExport = async (s: ObjectStore, fleetId = a.fleetId, onDone?: (x: ExportSummary) => void) =>
+    unzipSync(await collect(await exportFleet(db, s, fleetId, new Date("2026-10-27T15:00:00Z"), onDone)));
+  const keyOf = async (kind: "service_receipt" | "fuel_receipt") =>
+    (await db.select().from(schema.attachments).where(eq(schema.attachments.kind, kind))).find((r) => r.fleetId === a.fleetId)!.storageKey;
+  const providerError = () => Object.assign(new Error("socket hang up"), { name: "FilesError", code: "Provider" });
+
+  it("finishes the zip when a photo can't be read, listing it as unreadable; a one-off failure is retried", async () => {
+    const [serviceKey, fuelKey] = [await keyOf("service_receipt"), await keyOf("fuel_receipt")];
+    let fuelFailures = 0;
+    const flaky: ObjectStore = {
+      ...store,
+      async get(key) {
+        if (key === serviceKey) throw providerError();
+        if (key === fuelKey && fuelFailures++ === 0) throw providerError();
+        return store.get(key);
+      },
+    };
+    let summary: ExportSummary | undefined;
+    const zip = await unzipExport(flaky, a.fleetId, (x) => { summary = x; });
+
+    expect(Object.keys(zip).filter((n) => n.startsWith("receipts/")).sort()).toEqual([
+      "receipts/2026-10-14 T9 diagnosis lights flicker.jpg", "receipts/2026-10-15 101 R12 fuel pilot #4.png",
+    ]);
+    const json = JSON.parse(strFromU8(zip["fleet.json"]));
+    expect(json.unreadableFiles).toEqual(["receipts/2026-10-14 101 oil change.jpg"]);
+    expect(json.missingFiles).toEqual(["receipts/2026-10-14 T9 diagnosis lights flicker (2).jpg"]);
+    expect(json.serviceRecords[0].receiptFiles).toEqual([]);
+    expect(strFromU8(zip["service-records.csv"])).not.toContain("oil change.jpg");
+    expect(summary).toMatchObject({ photos: 2, missing: 1, unreadable: 1, errors: ["FilesError (Provider)"], cancelled: false });
+  });
+
+  it("fetches a few photos ahead of the reader, never more than four at once, keeping their order", async () => {
+    const c = await seedFleet(db, { userId: "user-c", unit: "500" });
+    const actorC = { fleetId: c.fleetId, userId: "user-c" };
+    for (let day = 10; day < 20; day++) {
+      const [r] = await db.insert(schema.serviceRecords).values({ fleetId: c.fleetId, equipmentId: c.equipmentId, date: `2026-09-${day}`, serviceType: "Wash", createdBy: "user-c" }).returning();
+      await saveAttachment(db, store, actorC, { kind: "service_receipt", parentId: r.id, bytes: jpeg(`WASH-${day}`), contentType: "image/jpeg" });
+      await db.update(schema.attachments).set({ createdAt: new Date(Date.UTC(2026, 8, day)) }).where(eq(schema.attachments.parentId, r.id));
+    }
+    let inFlight = 0, most = 0;
+    const slow: ObjectStore = {
+      ...store,
+      async get(key) {
+        most = Math.max(most, ++inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        return store.get(key);
+      },
+    };
+    const zip = await unzipExport(slow, c.fleetId);
+
+    expect(most).toBe(4);
+    const photos = Object.keys(zip).filter((n) => n.startsWith("receipts/"));
+    expect(photos).toEqual(Array.from({ length: 10 }, (_, i) => `receipts/2026-09-${10 + i} 500 wash.jpg`));
+    expect(strFromU8(zip["receipts/2026-09-13 500 wash.jpg"])).toContain("WASH-13");
   });
 });

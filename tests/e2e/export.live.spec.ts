@@ -51,6 +51,11 @@ test("the owner downloads one zip with their records and receipt photos, and onl
   const { rows: [{ fleet_id: fleetId }] } = await db.query(
     `select m.fleet_id from memberships m join neon_auth."user" u on u.id::text = m.user_id where u.email = $1`, [owner.email]);
   await db.query(`insert into equipment (fleet_id, unit_number, normalized_unit_number, type, archived_at) values ($1, 'T-OLD', 'T-OLD', 'trailer', now())`, [fleetId]);
+  // A second receipt row whose object was never in the bucket: the real store must report it missing, not fail the zip.
+  await db.query(
+    `insert into attachments (fleet_id, kind, parent_id, storage_key, content_type, byte_size, created_by, created_at)
+     select fleet_id, 'service_receipt', id, 'fleets/' || fleet_id || '/service_receipt/' || id || '/' || gen_random_uuid() || '.jpg', 'image/jpeg', 100, created_by, now() + interval '1 minute'
+     from service_records where fleet_id = $1`, [fleetId]);
 
   await page.goto("/settings");
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Download my data" }).click()]);
@@ -70,7 +75,7 @@ test("the owner downloads one zip with their records and receipt photos, and onl
   expect(service).toContain(`,Brake adjustment,`);
   expect(service).toContain(`,150.00,"Joe's, Exit 12",'=1+1,${photo},`);
   const json = JSON.parse(strFromU8(files["fleet.json"]));
-  expect(json).toMatchObject({ formatVersion: 1, fleet: { id: fleetId }, missingFiles: [] });
+  expect(json).toMatchObject({ formatVersion: 1, fleet: { id: fleetId }, missingFiles: ["receipts/2026-10-14 301 brake adjustment (2).jpg"], unreadableFiles: [] });
   expect(json.serviceRecords).toEqual([expect.objectContaining({ serviceType: "Brake adjustment", cost: "150.00", receiptFiles: [photo] })]);
   expect(json.units.map((u: { unitNumber: string }) => u.unitNumber)).toEqual(["301", "T-OLD"]);
 
