@@ -36,6 +36,13 @@
       "when": 1793119012040,
       "tag": "0004_account_closure",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793120784088,
+      "tag": "0005_platform_admin_roles",
+      "breakpoints": true
     }
   ]
 }

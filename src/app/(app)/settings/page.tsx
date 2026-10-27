@@ -8,7 +8,7 @@ import { ChangePassword } from "@/components/settings/ChangePassword";
 import Link from "next/link";
 import { getDb } from "@/db";
 import { getSessionUser } from "@/lib/auth/server";
-import { isPlatformAdmin } from "@/server/adminStore";
+import { platformRoleOf } from "@/server/adminStore";
 import { requireFleet } from "@/server/fleet";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -67,11 +67,12 @@ async function Closure() {
 async function AdminLink() {
   await connection();
   const user = await getSessionUser();
-  if (!user || !(await isPlatformAdmin(getDb(), user.id))) return null;
+  const role = user ? await platformRoleOf(getDb(), user.id) : null;
+  if (!role) return null;
   return (
     <section className="card mt-4 max-w-md" aria-labelledby="admin-heading">
       <h3 id="admin-heading" className="mb-2">Platform admin</h3>
-      <p className="text-secondary mb-4 text-sm">See every account and turn access on or off.</p>
+      <p className="text-secondary mb-4 text-sm">See every account and turn access on or off{role === "super" ? ", and manage admins" : ""}.</p>
       <Link className="btn btn-primary" href="/admin">Open admin</Link>
     </section>
   );

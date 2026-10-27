@@ -24,30 +24,37 @@ export async function accountStateOf(db: AppDb, userId: string): Promise<Account
 }
 
 /**
- * Whether this user is a platform admin and no other admin has an open account. Closing or deleting that
- * account would leave nobody able to run the platform.
+ * Whether this user is a super admin and no other super admin has an open account. Closing their account, or
+ * taking away their super role, would leave nobody able to manage the platform's admins.
  */
-export async function isLastPlatformAdmin(db: AppDb, userId: string): Promise<boolean> {
+export async function isLastSuperAdmin(db: AppDb, userId: string): Promise<boolean> {
   const admins = schema.platformAdmins;
-  const [self] = await db.select({ userId: admins.userId }).from(admins).where(eq(admins.userId, userId)).limit(1);
+  const [self] = await db.select({ userId: admins.userId }).from(admins).where(and(eq(admins.userId, userId), eq(admins.role, "super"))).limit(1);
   if (!self) return false;
   const [other] = await db.select({ userId: admins.userId }).from(admins).where(and(
     ne(admins.userId, userId),
+    eq(admins.role, "super"),
     notExists(db.select({ one: sql`1` }).from(schema.accountStates).where(eq(schema.accountStates.userId, admins.userId))),
   )).limit(1);
   return !other;
 }
 
-const LAST_ADMIN = invalid("You're the only platform admin. Add another admin before closing or deleting this account.");
-
 /**
- * Runs `write` unless it would take away the last open admin account. The check and the write share a transaction
- * that first locks every platform_admins row, so two admins closing at once queue up and the second sees the first.
+ * Locks every platform_admins row for the rest of the transaction. Everything that could leave the platform without
+ * a super admin (closing an account, changing or removing an admin) takes this lock first, so they queue up and
+ * each one re-checks what the one before it wrote.
  */
+export async function lockPlatformAdmins(tx: AppDb): Promise<void> {
+  await tx.select({ userId: schema.platformAdmins.userId }).from(schema.platformAdmins).for("update");
+}
+
+const LAST_ADMIN = invalid("You're the only super admin. Make another admin a super admin before closing or deleting this account.");
+
+/** Runs `write` unless it would take away the last open super admin account. */
 async function unlessLastAdmin(db: AppDb, userId: string, write: (tx: AppDb) => Promise<unknown>): Promise<{ ok: true } | Failure> {
   return db.transaction(async (tx) => {
-    await tx.select({ userId: schema.platformAdmins.userId }).from(schema.platformAdmins).for("update");
-    if (await isLastPlatformAdmin(tx, userId)) return LAST_ADMIN;
+    await lockPlatformAdmins(tx);
+    if (await isLastSuperAdmin(tx, userId)) return LAST_ADMIN;
     await write(tx);
     return { ok: true as const };
   });
