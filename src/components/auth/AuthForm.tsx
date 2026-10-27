@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
+import { authFailureMessage } from "@/lib/auth/errors";
 import { BRAND } from "@/lib/brand";
 
 type Mode = "sign-in" | "sign-up";
@@ -31,8 +32,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
       }
       router.push("/dashboard");
       router.refresh();
-    } catch {
-      setError("We couldn't reach the sign-in service. Check your connection and try again.");
+    } catch (caught) {
+      console.error("Auth request failed", caught);
+      setError(authFailureMessage(caught));
     } finally {
       setPending(false);
     }

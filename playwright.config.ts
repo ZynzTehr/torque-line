@@ -10,10 +10,12 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   // Uses the installed Google Chrome; set PW_CHANNEL=chromium to use Playwright's bundled build instead.
-  use: { baseURL: remote ?? `http://localhost:${port}`, trace: "retain-on-failure", channel: process.env.PW_CHANNEL ?? "chrome" },
+  use: { baseURL: remote ?? `http://localhost:${port}`, trace: "retain-on-failure" },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"], channel: process.env.PW_CHANNEL ?? "chrome", viewport: { width: 1440, height: 900 } } },
     { name: "phone", use: { ...devices["Pixel 7"], channel: process.env.PW_CHANNEL ?? "chrome" } },
+    // Safari's engine (Playwright WebKit). Run with --project=safari.
+    { name: "safari", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: remote ? undefined : {
     command: `npm run build && npx next start -p ${port}`,
