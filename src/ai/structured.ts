@@ -21,11 +21,18 @@ export type AiResult<T> = { ok: true; data: T; model: string } | AiFailure;
 
 let transport: AiTransport | null = null;
 
-/** Lazily created SDK client; credentials come from ANTHROPIC_API_KEY on the server only. */
+/**
+ * Lazily created SDK client; credentials come from ANTHROPIC_API_KEY on the server only. A key that is not
+ * scoped to a workspace also needs ANTHROPIC_WORKSPACE_ID, which the SDK does not read on its own.
+ */
 export function anthropicTransport(): AiTransport | null {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   if (!transport) {
-    const client = new Anthropic({ maxRetries: 2, timeout: 90_000 });
+    const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+    const client = new Anthropic({
+      maxRetries: 2, timeout: 90_000,
+      ...(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {}),
+    });
     transport = { parse: (params) => client.beta.messages.parse(params as never) as never };
   }
   return transport;
