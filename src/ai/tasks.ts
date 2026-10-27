@@ -31,18 +31,23 @@ If the image is blurry, angled, or obstructed, lower your confidence. If there i
 const HOURS_PROMPT = `Read the total engine run hours on this reefer unit display (Thermo King, Carrier Transicold) or engine hour meter.
 Ignore tenths of an hour. If the screen only shows box temperature or setpoint, set is_meter to false and say in notes to open the Hourmeters or Gauges menu.`;
 
+/** The reading the guardrails allow, or null: not a meter, nothing readable, or an impossible value. */
+function meterValue(d: z.infer<typeof meterSchema>, max: number): number | null {
+  const v = d.value;
+  return d.is_meter && v != null && Number.isFinite(v) && v >= 0 && v <= max ? Math.floor(v) : null;
+}
+
 export async function readMeter(t: AiTransport | null, image: ImageBlock, meter: "odometer" | "hours"):
   Promise<AiResult<{ value: number | null; confidence: "high" | "medium" | "low"; notes: string }>> {
+  const max = meter === "hours" ? MAX_HOURS : MAX_ODOMETER;
   const r = await askStructured(t, {
     schema: meterSchema, model: READ_MODEL, effort: "low", maxTokens: 2000,
     system: `You read vehicle meters from photos for a fleet maintenance app. ${SHARED}`,
     content: [image, text(meter === "hours" ? HOURS_PROMPT : ODOMETER_PROMPT)],
+    accept: (d) => meterValue(d, max) != null,
   });
   if (!r.ok) return r;
-  const max = meter === "hours" ? MAX_HOURS : MAX_ODOMETER;
-  const v = r.data.value;
-  const value = r.data.is_meter && v != null && Number.isFinite(v) && v >= 0 && v <= max ? Math.floor(v) : null;
-  return { ok: true, model: r.model, data: { value, confidence: r.data.confidence, notes: r.data.notes.slice(0, 500) } };
+  return { ok: true, model: r.model, data: { value: meterValue(r.data, max), confidence: r.data.confidence, notes: r.data.notes.slice(0, 500) } };
 }
 
 // --- Service receipt: medium effort ------------------------------------------------------------
@@ -58,6 +63,7 @@ export async function readServiceReceipt(t: AiTransport | null, image: ImageBloc
     schema: serviceReceiptSchema, model: READ_MODEL, effort: "medium", maxTokens: 4000,
     system: `You extract fields from vehicle service invoices and receipts for a fleet maintenance app. ${SHARED}`,
     content: [image, text("Extract the service date, odometer mileage, service performed, shop name, total cost, and notes. If this is not a service record, set is_service_record to false.")],
+    accept: (d) => d.is_service_record,
   });
   if (!r.ok) return r;
   const d = r.data;
@@ -95,6 +101,8 @@ export async function readFuelReceipt(t: AiTransport | null, image: ImageBlock) 
     schema: fuelReceiptSchema, model: READ_MODEL, effort: "medium", maxTokens: 4000,
     system: `You extract fuel purchases from truck stop receipts for a fleet maintenance app. ${SHARED}`,
     content: [image, text(FUEL_PROMPT)],
+    // A fuel receipt always has at least one product; none means nothing was read.
+    accept: (d) => normalizeFuelTransactionReceipt(d).items.length > 0,
   });
   if (!r.ok) return r;
   return { ok: true as const, model: r.model, data: normalizeFuelTransactionReceipt(r.data) };

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { askStructured, type AiTransport } from "@/ai/structured";
+import { askStructured, type AiTransport, type RequestLimits } from "@/ai/structured";
 
 const schema = z.object({ value: z.number() });
 const ok = (parsed: unknown, extra: object = {}) => ({ stop_reason: "end_turn", parsed_output: parsed, model: "claude-opus-5-5", ...extra });
@@ -46,9 +47,9 @@ describe("askStructured", () => {
 
 describe("askStructured on Haiku with an Opus retry", () => {
   /** Answers each call with the next response in order, echoing the requested model like the API does. */
-  function sequence(...responses: unknown[]): AiTransport & { calls: Record<string, unknown>[]; limits: unknown[] } {
+  function sequence(...responses: unknown[]): AiTransport & { calls: Record<string, unknown>[]; limits: (RequestLimits | undefined)[] } {
     const calls: Record<string, unknown>[] = [];
-    const limits: unknown[] = [];
+    const limits: (RequestLimits | undefined)[] = [];
     return {
       calls,
       limits,
@@ -61,8 +62,9 @@ describe("askStructured on Haiku with an Opus retry", () => {
       }),
     };
   }
-  const ask = (t: AiTransport) =>
-    askStructured(t, { schema, model: "claude-haiku-5-5", system: "s", content: [{ type: "text", text: "read" }], effort: "low", maxTokens: 2000 });
+  const ask = (t: AiTransport, extra: { accept?: (d: { value: number }) => boolean; signal?: AbortSignal } = {}) =>
+    askStructured(t, { schema, model: "claude-haiku-5-5", system: "s", content: [{ type: "text", text: "read" }], effort: "low", maxTokens: 2000, ...extra });
+  const positive = (d: { value: number }) => d.value > 0;
 
   it("answers from Haiku in one call, without the server-side fallback Haiku does not support", async () => {
     const t = sequence({ parsed_output: { value: 7 } });
@@ -96,16 +98,63 @@ describe("askStructured on Haiku with an Opus retry", () => {
     expect(t.calls).toHaveLength(2);
   });
 
+  it("asks Opus when Haiku's valid answer is one the caller can't use, and returns Opus's reading", async () => {
+    const t = sequence({ parsed_output: { value: 0 } }, { parsed_output: { value: 482317 } });
+    expect(await ask(t, { accept: positive })).toEqual({ ok: true, data: { value: 482317 }, model: "claude-opus-5-5" });
+    expect(t.calls.map((c) => c.model)).toEqual(["claude-haiku-5-5", "claude-opus-5-5"]);
+  });
+
+  it("returns Opus's answer when Opus can't read it either", async () => {
+    const t = sequence({ parsed_output: { value: 0 } }, { parsed_output: { value: -1 } });
+    expect(await ask(t, { accept: positive })).toEqual({ ok: true, data: { value: -1 }, model: "claude-opus-5-5" });
+  });
+
+  it("keeps Haiku's valid answer when the Opus retry fails outright", async () => {
+    const t = sequence({ parsed_output: { value: 0 } }, new Error("ECONNRESET"));
+    expect(await ask(t, { accept: positive })).toEqual({ ok: true, data: { value: 0 }, model: "claude-haiku-5-5" });
+  });
+
+  it("does not ask Opus when Haiku's answer is accepted", async () => {
+    const t = sequence({ parsed_output: { value: 5 } });
+    expect(await ask(t, { accept: positive })).toEqual({ ok: true, data: { value: 5 }, model: "claude-haiku-5-5" });
+    expect(t.calls).toHaveLength(1);
+  });
+
   it("caps Haiku at 30s with one SDK retry and the Opus retry at one SDK retry, so both fit in a 300s function", async () => {
     const t = sequence(new Error("ETIMEDOUT"), { parsed_output: { value: 1 } });
     await ask(t);
-    expect(t.limits).toEqual([{ timeout: 30_000, maxRetries: 1 }, { maxRetries: 1 }]);
+    expect(t.limits.map((l) => ({ ...l, signal: undefined }))).toEqual([
+      { timeout: 30_000, maxRetries: 1, signal: undefined }, { maxRetries: 1, signal: undefined }]);
+    expect(t.limits.every((l) => l?.signal instanceof AbortSignal)).toBe(true);
   });
 
-  it("leaves a direct Opus request on the client's default timeout and retries", async () => {
+  it("runs both attempts under one deadline, which also ends the SDK's retry-after waits", async () => {
+    const deadline = new AbortController();
+    const t = sequence(new Error("ETIMEDOUT"), { parsed_output: { value: 1 } });
+    await ask(t, { signal: deadline.signal });
+    expect(t.limits.map((l) => l?.signal?.aborted)).toEqual([false, false]);
+    deadline.abort();
+    expect(t.limits.map((l) => l?.signal?.aborted)).toEqual([true, true]);
+  });
+
+  it("skips the Opus retry once the deadline has passed, and reports the outage", async () => {
+    const deadline = new AbortController();
+    const calls: string[] = [];
+    const t: AiTransport = { parse: vi.fn(async (params) => {
+      calls.push(params.model as string);
+      deadline.abort();
+      throw new Anthropic.APIUserAbortError();
+    }) };
+    expect(await ask(t, { signal: deadline.signal })).toEqual({ ok: false, code: "unavailable" });
+    expect(calls).toEqual(["claude-haiku-5-5"]);
+  });
+
+  it("keeps a direct Opus request on the client's default timeout and retries, under the deadline", async () => {
     const t = sequence({ parsed_output: { value: 1 } });
     await askStructured(t, { schema, system: "s", content: [], effort: "high" });
-    expect(t.limits).toEqual([undefined]);
+    expect(t.limits).toHaveLength(1);
+    expect(Object.keys(t.limits[0]!)).toEqual(["signal"]);
+    expect(t.limits[0]!.signal!.aborted).toBe(false);
   });
 
   it("does not retry a failed Opus request", async () => {
