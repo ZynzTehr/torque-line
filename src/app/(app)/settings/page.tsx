@@ -25,6 +25,11 @@ export default function Page() {
           <div className="mb-3"><ChangePassword /></div>
           <SignOutButton className="btn btn-secondary" />
         </section>
+        <section className="card mt-4 max-w-md" aria-labelledby="data-heading">
+          <h3 id="data-heading" className="mb-2">Your data</h3>
+          <p className="text-secondary mb-3 text-sm">One zip file: spreadsheets of your units, service, fuel, readings, schedules and diagnoses, plus every receipt photo.</p>
+          <a className="btn btn-secondary" href="/api/export" download>Download my data</a>
+        </section>
         <section className="card mt-4 max-w-md" aria-labelledby="appearance-heading">
           <h3 id="appearance-heading" className="mb-2">Gear style</h3>
           <p className="text-secondary mb-3 text-sm">The finish of the gears behind every page. Light and dark themes are in the sidebar.</p>
