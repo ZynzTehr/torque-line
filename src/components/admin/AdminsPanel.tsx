@@ -43,8 +43,8 @@ function AdminRow({ admin, isSelf }: { admin: AdminView; isSelf: boolean }) {
   return (
     <li className="card !p-3" data-testid="platform-admin">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <span className="truncate font-semibold">{email}</span>
+        <div className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-2">
+          <span className="font-semibold break-all">{email}</span>
           {isSelf && <><span className="badge badge-blue">{ROLE_LABEL[admin.role]}</span><span className="badge badge-neutral">You</span></>}
         </div>
         {!isSelf && (
