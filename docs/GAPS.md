@@ -20,7 +20,7 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Sign-in/sign-up page visual identity and hierarchy | Partial | half a day | Make /auth a split layout. The left or top panel reuses LogoMark, the wordmark, the grid background and GearsStage at low opacity, with 2-3 product bullets ('PM due by miles or days', 'Read odometers from a photo', 'AI diagnostics'). The right side holds… |
 | Landing page path to sign-up | Partial | under 1 hour | Make the primary CTA 'Start your fleet' linking to /auth/sign-up, add a secondary 'Sign in' button (the .landing-demo-btn styles), and add a small top-right 'Sign in' link. Show 'Open my fleet' only when a session exists, which can be checked server-side… |
 
-## Medium impact (37)
+## Medium impact (36)
 
 | Capability | Now | Effort | What to do |
 |---|---|---|---|
@@ -50,7 +50,6 @@ Impact is for a fleet owner using the app day to day. Effort is a rough estimate
 | Confirmation after applying intervals ('N AI-suggested intervals applied') and an error when saving fails | Missing | under 1 hour | Show "Added N to the schedule" plus "M skipped" when skipped > 0, and set message on failure. |
 | Per-fleet AI quota | Partial | half a day | Compute the day in the fleet timezone. Refund the unit when the failure code is 'unavailable'. Move the spend() check ahead of photo storage and session creation. Show 'N of 100 AI requests used today' in Settings and in the quota error. Add a per-fleet… |
 | Change email, edit name | Missing | half a day | Change password shipped. Add Settings sections for Profile (name, fleet name, timezone) and Email (changeEmail with verification of the new address). Add a 'Sign out of all devices' action. |
-| Delete my account and fleet data | Missing | half a day | Add a 'Delete account' danger zone that requires typing the fleet name and re-entering the password. One server action deletes bucket objects under the fleet prefix, deletes the fleet (cascades), then calls deleteUser. Log the deletion. Optionally… |
 | Security headers and Content-Security-Policy | Missing | under 1 hour | Add headers() for every path: `Content-Security-Policy` with frame-ancestors 'none', script-src 'self' plus the theme-script hash, img-src 'self' blob: data:, and connect-src 'self'. Also X-Content-Type-Options: nosniff, Referrer-Policy:… |
 | Vercel preview deployments | Missing | under 1 hour | Pick one option on purpose. (a) Turn off Preview deployments in Vercel, or keep Vercel Deployment Protection on them. (b) Install the Neon-Vercel integration so each preview gets its own Neon branch with its own DATABASE_URL and auth, and add the preview… |
 | Landing page SEO and share metadata | Partial | under 1 hour | Set metadataBase to the production domain, a keyworded homepage title such as 'Torqueline - Preventive maintenance for small trucking fleets', openGraph and twitter with a 1200x630 opengraph-image.tsx, robots.ts that disallows the app routes, sitemap.ts,… |
