@@ -21,7 +21,7 @@ async function swipe(page: Page, from: { x: number; y: number }, to: { x: number
 }
 
 test("phone gestures: sheet swipe-down, section swipe, row swipe actions", async ({ page }) => {
-  const stamp = `${Date.now()}`;
+  const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`; // desktop and phone run at once: the same millisecond must not mean the same email
   await page.goto("/auth/sign-up");
   await page.getByLabel("Your name").fill("Phone Test");
   await page.getByLabel("Email").fill(`e2e+p${stamp}@example.com`);

@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 test.skip(!process.env.LIVE, "set LIVE=1 to run against a real Neon branch");
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
-const stamp = `${Date.now()}`;
+const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`; // desktop and phone run at once: the same millisecond must not mean the same email
 
 async function jpeg(page: Page): Promise<Buffer> {
   const b64 = await page.evaluate(() => {

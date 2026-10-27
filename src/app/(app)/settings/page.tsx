@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { GearStyleSwitcher } from "@/components/shell/GearStyleSwitcher";
 import { SignOutButton } from "@/components/shell/SignOutButton";
+import { ChangePassword } from "@/components/settings/ChangePassword";
 import Link from "next/link";
 import { getDb } from "@/db";
 import { getSessionUser, LOGIN_URL } from "@/lib/auth/server";
@@ -21,6 +22,7 @@ export default function Page() {
           <Suspense fallback={<p className="text-secondary mb-4 text-sm">Loading…</p>}>
             <SignedInAs />
           </Suspense>
+          <div className="mb-3"><ChangePassword /></div>
           <SignOutButton className="btn btn-secondary" />
         </section>
         <section className="card mt-4 max-w-md" aria-labelledby="appearance-heading">
