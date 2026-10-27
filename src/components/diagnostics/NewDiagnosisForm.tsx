@@ -31,8 +31,15 @@ export function NewDiagnosisForm({ units }: { units: { id: string; unitNumber: s
     photos.forEach((p) => form.append("photos", p));
     setPending(true);
     setError(null);
-    const r = await startDiagnosisAction(form);
-    setPending(false);
+    let r: Awaited<ReturnType<typeof startDiagnosisAction>>;
+    try {
+      r = await startDiagnosisAction(form);
+    } catch {
+      setError("We couldn't reach the server. Check your connection and try again.");
+      return;
+    } finally {
+      setPending(false);
+    }
     if (r.ok) { router.push(`/diagnostics/${r.sessionId}`); return; }
     if ("sessionId" in r && r.sessionId) { router.push(`/diagnostics/${r.sessionId}?error=${encodeURIComponent(r.message)}`); return; }
     setError(r.message);

@@ -69,18 +69,46 @@ export async function appendTurn(db: AppDb, fleetId: string, sessionId: string, 
   return { ok: true as const };
 }
 
-/** Replace the open ranked list. Ruled-out causes are kept (shown struck through) and are not re-ranked. */
+const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+/**
+ * Replace the open ranked list. Ruled-out and tried causes are kept: a tried cause the model dropped stays
+ * visible, and a tried mark made while the model was thinking survives (the session row is locked and the
+ * marks are read inside the transaction, after the model answered).
+ */
 export async function replaceCauses(db: AppDb, fleetId: string, sessionId: string, causes: CauseInput[]) {
   if (!(await ownedSession(db, fleetId, sessionId))) return notFound("That diagnosis");
   await db.transaction(async (tx) => {
+    await tx.select({ id: schema.diagnosticSessions.id }).from(schema.diagnosticSessions)
+      .where(and(eq(schema.diagnosticSessions.fleetId, fleetId), eq(schema.diagnosticSessions.id, sessionId))).for("update");
+    const existing = await tx.select().from(schema.diagnosticCauses)
+      .where(and(eq(schema.diagnosticCauses.fleetId, fleetId), eq(schema.diagnosticCauses.sessionId, sessionId)));
+    const kept = new Map(existing.filter((c) => c.tried || c.ruledOut).map((c) => [normalizeName(c.name), c]));
     await tx.delete(schema.diagnosticCauses).where(and(
-      eq(schema.diagnosticCauses.fleetId, fleetId), eq(schema.diagnosticCauses.sessionId, sessionId), eq(schema.diagnosticCauses.ruledOut, false)));
-    if (causes.length) {
-      await tx.insert(schema.diagnosticCauses).values(causes.map((c, i) => ({
-        fleetId, sessionId, rank: i + 1, name: c.name.slice(0, 200), likelihood: c.likelihood, why: c.why.slice(0, 2000),
-        howToCheck: c.how_to_check.slice(0, 2000), costTier: c.cost_tier, safetyCritical: c.safety_critical,
-        needsShop: c.needs_shop, tried: c.tried,
-      })));
+      eq(schema.diagnosticCauses.fleetId, fleetId), eq(schema.diagnosticCauses.sessionId, sessionId),
+      eq(schema.diagnosticCauses.ruledOut, false), eq(schema.diagnosticCauses.tried, false)));
+
+    let rank = 0;
+    for (const c of causes) {
+      const match = kept.get(normalizeName(c.name));
+      if (match?.ruledOut) continue;
+      rank += 1;
+      const details = {
+        rank, likelihood: c.likelihood, why: c.why.slice(0, 2000), howToCheck: c.how_to_check.slice(0, 2000),
+        costTier: c.cost_tier, safetyCritical: c.safety_critical, needsShop: c.needs_shop, updatedAt: new Date(),
+      };
+      if (match) {
+        await tx.update(schema.diagnosticCauses).set(details).where(eq(schema.diagnosticCauses.id, match.id));
+        kept.delete(normalizeName(c.name));
+      } else {
+        await tx.insert(schema.diagnosticCauses).values({ ...details, fleetId, sessionId, name: c.name.slice(0, 200), tried: c.tried });
+      }
+    }
+    // Tried causes the model no longer lists stay, ranked after the current list.
+    for (const c of kept.values()) {
+      if (c.ruledOut) continue;
+      rank += 1;
+      await tx.update(schema.diagnosticCauses).set({ rank, updatedAt: new Date() }).where(eq(schema.diagnosticCauses.id, c.id));
     }
     await tx.update(schema.diagnosticSessions).set({ updatedAt: new Date() })
       .where(and(eq(schema.diagnosticSessions.fleetId, fleetId), eq(schema.diagnosticSessions.id, sessionId)));

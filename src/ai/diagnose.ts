@@ -56,3 +56,18 @@ export async function runDiagnosis(t: AiTransport | null, opts: { prior: StoredT
   if (!r.ok) return r;
   return { ok: true, model: r.model, data: applyDiagnosisGuardrails(r.data, { triedOrRuledOut: opts.statuses }), raw: r.data };
 }
+
+/**
+ * The user turn for a refinement. If the session has no conversation yet (its first model call failed),
+ * send the full opening context instead of a bare update, so the model sees the unit, symptom, and photos.
+ */
+export function buildRefineTurn(opts: {
+  priorTurns: number; unit: UnitContext; symptom: string; images: ImageBlock[]; statuses: CauseStatus[]; note?: string;
+}): { send: Block[]; store: Block[] } {
+  if (opts.priorTurns > 0) return buildDiagnosisTurn({ statuses: opts.statuses, note: opts.note });
+  const opening = buildDiagnosisTurn({ unit: opts.unit, symptom: opts.symptom, images: opts.images });
+  const note = opts.note?.trim();
+  if (!note) return opening;
+  const extra: Block = { type: "text", text: `Additional information from the owner: ${note.slice(0, 2000)}` };
+  return { send: [...opening.send, extra], store: [...opening.store, extra] };
+}

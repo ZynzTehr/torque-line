@@ -6,19 +6,21 @@ import type { AppDb } from "./fleetStore";
 import { getEquipment } from "./equipmentStore";
 import { invalid, notFound, type Actor, type Failure } from "./result";
 import { listServiceRecords } from "./serviceStore";
-import { advanceMeterFromEvidence, observedAtFromDate } from "./readingsStore";
+import { advanceMeterFromEvidence, lockUnits, notTooFarAhead } from "./readingsStore";
+import { MAX_HOURS, MAX_ODOMETER } from "@/domain/readings";
 
 const lineInput = z.object({
   equipmentId: z.string(),
   product: z.enum(["diesel", "def", "reefer"]),
-  gallons: z.number().nonnegative().optional(),
-  pricePerGallon: z.number().nonnegative().optional(),
-  subtotal: z.number().nonnegative(),
-  odometer: z.number().int().nonnegative().optional(),
-  hours: z.number().int().nonnegative().optional(),
+  // Upper bounds match the column precision: numeric(10,3), numeric(8,3), numeric(12,2), and the meter ranges.
+  gallons: z.number().nonnegative().max(9_999_999.999, "That gallon amount is too large.").optional(),
+  pricePerGallon: z.number().nonnegative().max(99_999.999, "That price per gallon is too large.").optional(),
+  subtotal: z.number().nonnegative().max(9_999_999_999.99, "That amount is too large."),
+  odometer: z.number().int().nonnegative().max(MAX_ODOMETER, "Odometer readings above 9,999,999 aren't supported.").optional(),
+  hours: z.number().int().nonnegative().max(MAX_HOURS, "Hour readings above 999,999 aren't supported.").optional(),
 });
 const stopInput = z.object({
-  date: z.string(),
+  date: z.string().refine(notTooFarAhead, "Fuel dates can't be in the future."),
   station: z.string().trim().max(200).optional(),
   notes: z.string().trim().max(2000).optional(),
   lines: z.array(lineInput).min(1, "Enter at least one fuel product.").max(3),
@@ -50,7 +52,10 @@ export async function addFuelStop(db: AppDb, actor: Actor, input: FuelStopInput)
     return invalid((error as Error).message);
   }
 
+  if (purchase.totalCost > 9_999_999_999.99) return invalid("That fuel stop total is too large.");
+
   return db.transaction(async (tx) => {
+    await lockUnits(tx, actor.fleetId, ids);
     const [stop] = await tx.insert(schema.fuelStops).values({
       fleetId: actor.fleetId, date: purchase.date, station: purchase.location || null, notes: purchase.notes || null,
       total: purchase.totalCost, createdBy: actor.userId,
@@ -63,7 +68,7 @@ export async function addFuelStop(db: AppDb, actor: Actor, input: FuelStopInput)
     for (const it of purchase.items) {
       const reading = it.fuelType === "reefer" ? it.hours : it.odometer;
       if (reading == null) continue;
-      await advanceMeterFromEvidence(tx, actor, { equipmentId: String(it.equipmentId), value: reading, observedAt: observedAtFromDate(purchase.date), source: "fuel" });
+      await advanceMeterFromEvidence(tx, actor, { equipmentId: String(it.equipmentId), value: reading, date: purchase.date, source: "fuel" });
     }
     return { ok: true as const, id: stop.id };
   });

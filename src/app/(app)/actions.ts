@@ -3,6 +3,7 @@
 import { refresh } from "next/cache";
 import { getDb } from "@/db";
 import { requireFleet } from "@/server/fleet";
+import { guarded } from "@/server/guarded";
 import { archiveEquipment, createEquipment, updateEquipment, type EquipmentInput } from "@/server/equipmentStore";
 import { recordReading, type ReadingInput } from "@/server/readingsStore";
 import { addSchedule, applyDefaultSchedule, deleteSchedule, updateSchedule, type ScheduleInput } from "@/server/scheduleStore";
@@ -13,11 +14,13 @@ import { addFuelStop, deleteFuelStop, type FuelStopInput } from "@/server/fuelSt
  * Server actions are public HTTP endpoints. Each one derives the fleet from the session through
  * requireFleet() and passes plain data to a tested store; nothing here trusts a client-sent fleet id.
  */
-async function withFleet<T>(run: (ctx: { fleetId: string; userId: string }) => Promise<T>): Promise<T> {
-  const { fleetId, user } = await requireFleet();
-  const result = await run({ fleetId, userId: user.id });
-  if ((result as { ok?: boolean })?.ok) refresh();
-  return result;
+async function withFleet<T>(run: (ctx: { fleetId: string; userId: string }) => Promise<T>) {
+  return guarded(run.name || "action", async () => {
+    const { fleetId, user } = await requireFleet();
+    const result = await run({ fleetId, userId: user.id });
+    if ((result as { ok?: boolean })?.ok) refresh();
+    return result;
+  });
 }
 
 export async function createEquipmentAction(input: EquipmentInput) {

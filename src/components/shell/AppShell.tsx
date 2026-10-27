@@ -13,6 +13,10 @@ import { ThemeSwitcher } from "./ThemeSwitcher";
 const NO_SWIPE = "[data-no-swipe], input, textarea, select, [role='slider'], .swipe-row";
 
 /**
+ * touch-pan-y on <main>: without it, mobile browsers claim horizontal drags as panning and send
+ * pointercancel, so section swipes never complete. Sideways-scrolling regions inside (the register
+ * table, photo strips) are their own scroll containers and keep native horizontal panning.
+ *
  * The shell is static so it lands in the prerendered page; only the active-link highlight
  * reads the path (behind Suspense), and swipes read it from the browser at gesture time.
  */
@@ -66,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {menuOpen && <button className="fixed inset-0 z-[90] bg-black/40 md:hidden" aria-label="Close navigation" onClick={closeMenu} />}
 
       <GearsStage />
-      <main id="main-content" className="main-content pb-24 md:pb-0" onPointerDown={onPointerDown} onPointerUp={onPointerUp}
+      <main id="main-content" className="main-content touch-pan-y pb-24 md:pb-0" onPointerDown={onPointerDown} onPointerUp={onPointerUp}
         onPointerCancel={() => { start.current = null; }}>
         {children}
       </main>

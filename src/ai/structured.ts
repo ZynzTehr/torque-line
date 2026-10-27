@@ -57,6 +57,9 @@ export async function askStructured<S extends z.ZodType>(
     if (!checked.success) return { ok: false, code: "unreadable" };
     return { ok: true, data: checked.data, model: response.model };
   } catch (error) {
+    // The SDK parses structured output locally and throws a plain AnthropicError (not an APIError) when the
+    // text is truncated or doesn't match the schema: that's unreadable output, not an outage.
+    if (error instanceof Anthropic.AnthropicError && !(error instanceof Anthropic.APIError)) return { ok: false, code: "unreadable" };
     // Log the class only; provider messages can echo request details.
     console.error("AI request failed:", error instanceof Anthropic.APIError ? `${error.name} ${error.status}` : (error as Error)?.name);
     return { ok: false, code: "unavailable" };
