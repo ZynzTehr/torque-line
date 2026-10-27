@@ -1,5 +1,5 @@
 {
-  "id": "2d4c76a9-c579-4e4d-a75b-dc77f86dc815",
+  "id": "31eb1b9e-680b-44c0-ad04-aa42250783f7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -938,6 +938,12 @@
         },
         "last_service_mileage": {
           "name": "last_service_mileage",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_service_hours": {
+          "name": "last_service_hours",
           "type": "integer",
           "primaryKey": false,
           "notNull": false

@@ -106,6 +106,8 @@ export const maintenanceSchedules = pgTable("maintenance_schedules", {
   mileageInterval: integer("mileage_interval"),
   timeIntervalDays: integer("time_interval_days"),
   lastServiceMileage: integer("last_service_mileage"),
+  /** Reefer engine hours at last service; reefer schedules trigger on time, hours are kept for the record. */
+  lastServiceHours: integer("last_service_hours"),
   lastServiceDate: date("last_service_date"),
   enabled: boolean("enabled").notNull().default(true),
   source: intervalSource("source").notNull().default("manual"),
