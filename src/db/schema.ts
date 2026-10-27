@@ -8,6 +8,7 @@ import {
   boolean, check, date, foreignKey, index, integer, jsonb, numeric, pgEnum, pgTable, smallint, text,
   timestamp, unique, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
+import { PLATFORM_ROLES } from "../domain/adminPermissions";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -26,6 +27,7 @@ export const diagnosticRole = pgEnum("diagnostic_role", ["user", "assistant"]);
 export const likelihood = pgEnum("likelihood", ["high", "medium", "low"]);
 export const costTier = pgEnum("cost_tier", ["free", "low", "medium", "high"]);
 export const fleetStatus = pgEnum("fleet_status", ["active", "inactive"]);
+export const platformRole = pgEnum("platform_role", PLATFORM_ROLES);
 export const attachmentKind = pgEnum("attachment_kind", ["diagnostic_photo", "service_receipt", "fuel_receipt"]);
 
 /** MVP invariant: a user owns at most one fleet (unique owner). Multi-fleet access comes later through memberships. */
@@ -46,10 +48,14 @@ export const fleets = pgTable("fleets", {
   statusChangedBy: text("status_changed_by"),
 });
 
-/** Torqueline operators. Rows are added by hand (SQL), never through the app. */
+/**
+ * Torqueline operators. The first super admin is added by hand (SQL); after that super admins manage the list on
+ * /admin. What each role may do is in domain/adminPermissions.ts.
+ */
 export const platformAdmins = pgTable("platform_admins", {
   userId: text("user_id").primaryKey(),
   createdAt: createdAt(),
+  role: platformRole("role").notNull().default("super"),
 });
 
 /** userId is the Neon Auth (Better Auth) user id. Owner-only for the MVP. */

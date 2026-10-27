@@ -5,7 +5,8 @@ import { getDb } from "@/db";
 import { getSessionUser, LOGIN_URL } from "@/lib/auth/server";
 import { CLOSED_URL, PAUSED_URL } from "@/lib/auth/routes";
 import { accountStateOf } from "./accountStore";
-import { isPlatformAdmin } from "./adminStore";
+import { can, type AdminAction, type PlatformRole } from "@/domain/adminPermissions";
+import { platformRoleOf } from "./adminStore";
 import { resolveFleetForUser, type FleetContext } from "./fleetStore";
 
 export type { FleetContext };
@@ -42,12 +43,16 @@ export async function currentFleetAnyStatus(): Promise<FleetContext | null> {
   return user ? resolveFleetForUser(getDb(), user) : null;
 }
 
-/** A platform admin's identity, or a 404 for everyone else so the admin area doesn't advertise itself. */
-export async function requireAdmin(): Promise<{ userId: string; email: string }> {
+/**
+ * A platform admin's identity and role, or a 404 for everyone else (and for an admin whose role doesn't allow
+ * `action`) so the admin area doesn't advertise itself. Store functions re-check the role for every change.
+ */
+export async function requireAdmin(action: AdminAction = "viewAccounts"): Promise<{ userId: string; email: string; role: PlatformRole }> {
   await connection();
   const user = await getSessionUser();
   if (!user) redirect(LOGIN_URL);
-  if (!(await isPlatformAdmin(getDb(), user.id))) notFound();
+  const role = await platformRoleOf(getDb(), user.id);
+  if (!role || !can({ role }, action)) notFound();
   if (await accountStateOf(getDb(), user.id)) redirect(CLOSED_URL);
-  return { userId: user.id, email: user.email };
+  return { userId: user.id, email: user.email, role };
 }

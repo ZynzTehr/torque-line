@@ -2,8 +2,10 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
+import { AdminsPanel } from "@/components/admin/AdminsPanel";
 import { FleetStatusControl } from "@/components/admin/FleetStatusControl";
-import { listFleetsForAdmin, type AdminFleetRow } from "@/server/adminStore";
+import { can } from "@/domain/adminPermissions";
+import { listFleetsForAdmin, listPlatformAdmins, type AdminFleetRow } from "@/server/adminStore";
 import { requireAdmin } from "@/server/fleet";
 
 export const metadata: Metadata = { title: "Admin" };
@@ -34,8 +36,11 @@ async function countAuthAccounts(): Promise<number | null> {
 const fmtDate = (d: Date | null) => d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "never";
 
 async function AdminBoard() {
-  const { userId } = await requireAdmin();
-  const [rows, accounts] = await Promise.all([listFleetsForAdmin(getDb()), countAuthAccounts()]);
+  const { userId, role } = await requireAdmin();
+  const manageAdmins = can({ role }, "manageAdmins");
+  const [rows, accounts, admins] = await Promise.all([
+    listFleetsForAdmin(getDb()), countAuthAccounts(), manageAdmins ? listPlatformAdmins(getDb()) : null,
+  ]);
   const active7d = rows.filter((r) => r.seenLast7d).length;
   const inactive = rows.filter((r) => r.status === "inactive").length;
   const stats = [
@@ -64,6 +69,7 @@ async function AdminBoard() {
           </ul>
         )}
       </section>
+      {admins && <AdminsPanel selfId={userId} admins={admins} />}
     </>
   );
 }

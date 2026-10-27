@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { resolveFleetForUser } from "@/server/fleetStore";
-import { isPlatformAdmin, listFleetsForAdmin, setFleetStatus } from "@/server/adminStore";
+import { listFleetsForAdmin, platformRoleOf, setFleetStatus } from "@/server/adminStore";
 import { createTestDb, type TestDb } from "../helpers/testDb";
 
 let db: TestDb;
@@ -32,10 +32,10 @@ describe("fleet owner details", () => {
 
 describe("platform admin", () => {
   it("nobody is an admin until listed", async () => {
-    expect(await isPlatformAdmin(db, admin.id)).toBe(false);
+    expect(await platformRoleOf(db, admin.id)).toBeNull();
     await db.insert(schema.platformAdmins).values({ userId: admin.id });
-    expect(await isPlatformAdmin(db, admin.id)).toBe(true);
-    expect(await isPlatformAdmin(db, carol.id)).toBe(false);
+    expect(await platformRoleOf(db, admin.id)).toBe("super");
+    expect(await platformRoleOf(db, carol.id)).toBeNull();
   });
 
   it("lists every fleet with owner, status, units, and recent AI use, newest first", async () => {

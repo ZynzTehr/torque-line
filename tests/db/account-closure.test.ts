@@ -294,7 +294,7 @@ describe("the only platform admin", () => {
     await signUp(other);
     await db.delete(schema.platformAdmins);
     await db.insert(schema.platformAdmins).values({ userId: solo.id });
-    const refusal = { ok: false, code: "invalid", message: "You're the only platform admin. Add another admin before closing or deleting this account." };
+    const refusal = { ok: false, code: "invalid", message: "You're the only super admin. Make another admin a super admin before closing or deleting this account." };
     expect(await closeAccount(db, solo.id)).toEqual(refusal);
     expect(await scheduleAccountDeletion(db, solo.id)).toEqual(refusal);
     expect(await accountStateOf(db, solo.id)).toBeNull();

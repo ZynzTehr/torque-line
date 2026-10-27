@@ -73,3 +73,56 @@ test("the admin deactivates an account, the owner is paused, then reactivated", 
   await adminCtx.close();
   await memberCtx.close();
 });
+
+test("a super admin adds a support admin, who sees accounts but can't manage admins", async ({ browser }) => {
+  const adminCtx = await browser.newContext({ storageState: JSON.parse(shared.admin!) });
+  const adminPage = await adminCtx.newPage();
+  await adminPage.goto("/admin");
+  const admins = adminPage.getByRole("list", { name: "Admins" });
+  const self = admins.getByTestId("platform-admin").filter({ hasText: admin.email });
+  await expect(self.getByText("You", { exact: true })).toBeVisible();
+  await expect(self.getByRole("button", { name: "Remove" })).toHaveCount(0);
+  await expect(self.getByRole("combobox")).toHaveCount(0);
+
+  await adminPage.getByLabel("Email").fill(`nobody${stamp}@example.com`);
+  await adminPage.getByRole("button", { name: "Add admin" }).click();
+  await expect(adminPage.getByRole("alert").filter({ hasText: "No Torqueline account uses that email. They need to sign up first." })).toBeVisible();
+
+  await adminPage.getByLabel("Email").fill(member.email.toUpperCase());
+  await expect(adminPage.getByLabel("Role", { exact: true })).toHaveValue("support");
+  await adminPage.getByRole("button", { name: "Add admin" }).click();
+  const memberRow = admins.getByTestId("platform-admin").filter({ hasText: member.email });
+  await expect(memberRow.getByLabel(`Role for ${member.email}`)).toHaveValue("support");
+  await expect(adminPage.getByLabel("Email")).toHaveValue("");
+
+  const memberCtx = await browser.newContext({ storageState: JSON.parse(shared.member!) });
+  const memberPage = await memberCtx.newPage();
+  await memberPage.goto("/settings");
+  await memberPage.getByRole("link", { name: "Open admin" }).click();
+  await expect(memberPage.getByRole("heading", { name: "Platform admin" })).toBeVisible();
+  await expect(memberPage.getByTestId("admin-account").filter({ hasText: admin.email })).toBeVisible();
+  await expect(memberPage.getByRole("heading", { name: "Admins" })).toHaveCount(0);
+  await expect(memberPage.getByRole("button", { name: "Add admin" })).toHaveCount(0);
+
+  // Promote, then demote again: the role select saves on change.
+  const memberRole = memberRow.getByLabel(`Role for ${member.email}`);
+  await memberRole.selectOption("super");
+  await expect(memberRole).toBeEnabled(); // saved
+  await expect(memberRole).toHaveValue("super");
+  await memberPage.reload();
+  await expect(memberPage.getByRole("heading", { name: "Admins" })).toBeVisible();
+  await memberRole.selectOption("support");
+  await expect(memberRole).toBeEnabled();
+  await expect(memberRole).toHaveValue("support");
+  await memberPage.reload();
+  await expect(memberPage.getByRole("heading", { name: "Platform admin" })).toBeVisible();
+  await expect(memberPage.getByRole("heading", { name: "Admins" })).toHaveCount(0);
+
+  await memberRow.getByRole("button", { name: "Remove" }).click();
+  await adminPage.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
+  await expect(memberRow).toHaveCount(0);
+  await memberPage.goto("/admin");
+  await expect(memberPage.getByRole("heading", { name: "This page could not be found." })).toBeVisible();
+  await adminCtx.close();
+  await memberCtx.close();
+});
