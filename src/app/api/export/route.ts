@@ -6,7 +6,8 @@ import { neonObjectStore } from "@/server/objectStore";
 
 /**
  * Time spent streaming counts toward the function's limit. 300 s is the Hobby plan's ceiling (Pro allows 800).
- * The summary line below logs duration and size, so a fleet approaching it shows up before an export is cut off.
+ * exportFleet stops adding photos at 240 s and lists the rest in fleet.json, so the zip still finishes; the
+ * summary line below logs duration, size and skipped photos, so a fleet approaching the limit shows up.
  */
 export const maxDuration = 300;
 
@@ -18,11 +19,12 @@ export const maxDuration = 300;
 export async function GET() {
   const fleet = await requireFleet();
   try {
-    const body = await exportFleet(getDb(), await neonObjectStore(), fleet.fleetId, new Date(), (s) => {
-      const line = `export ${s.cancelled ? "cancelled by the client" : "done"} after ${(s.ms / 1000).toFixed(1)} s: ${s.photos} photos, ${(s.bytes / 1e6).toFixed(1)} MB, ${s.missing} missing, ${s.unreadable} unreadable`;
-      if (s.unreadable) console.error(`${line} (${[...new Set(s.errors)].join(", ")})`);
+    const body = await exportFleet(getDb(), await neonObjectStore(), fleet.fleetId, { onDone: (s) => {
+      const line = `export ${s.cancelled ? "cancelled by the client" : "done"} after ${(s.ms / 1000).toFixed(1)} s: ${s.photos} photos, ${(s.bytes / 1e6).toFixed(1)} MB, ` +
+        `${s.missing} missing, ${s.unreadable} unreadable, ${s.skipped} skipped at the time or size limit`;
+      if (s.unreadable || s.skipped) console.error(`${line}${s.errors.length ? ` (${[...new Set(s.errors)].join(", ")})` : ""}`);
       else console.log(line);
-    });
+    } });
     return new Response(body, {
       headers: {
         "Content-Type": "application/zip",
